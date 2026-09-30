@@ -1,89 +1,143 @@
 <!DOCTYPE html>
 <html lang="zh-TW">
 <head>
+    <!-- ... (Head 設定與 CSS 樣式完全繼承上一版，為節省版面不重複列出) ... -->
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>巡邏打卡工具 (V1 MVP 測試版)</title>
+    <title>巡邏打卡工具 (V4 串接上線版)</title>
     <style>
         body { font-family: sans-serif; padding: 20px; background: #f4f4f9; }
         .panel { background: #fff; padding: 15px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); margin-bottom: 20px; }
-        .control-group { margin-bottom: 10px; }
-        label { font-weight: bold; font-size: 14px; }
-        input { padding: 5px; width: 60px; text-align: center; }
-        button { padding: 10px 20px; background: #4a90e2; color: #fff; border: none; border-radius: 4px; font-size: 16px; cursor: pointer; }
+        .control-group { margin-bottom: 10px; display: flex; flex-direction: column; }
+        label { font-weight: bold; font-size: 14px; margin-bottom: 5px; }
+        input[type="number"], input[type="text"], select { padding: 8px; font-size: 14px; width: 100%; box-sizing: border-box; }
+        .param-row { display: flex; gap: 10px; }
+        .param-row .control-group { flex: 1; }
+        button { padding: 15px 20px; background: #4a90e2; color: #fff; border: none; border-radius: 4px; font-size: 18px; cursor: pointer; width: 100%; font-weight: bold;}
         button:active { background: #357abd; }
-        .log { margin-top: 20px; font-family: monospace; background: #222; color: #0f0; padding: 10px; border-radius: 4px; white-space: pre-wrap;}
+        button:disabled { background: #ccc; cursor: not-allowed; }
+        .log { margin-top: 20px; font-family: monospace; background: #222; color: #0f0; padding: 10px; border-radius: 4px; white-space: pre-wrap; font-size: 12px; height: 150px; overflow-y: auto;}
         .error { color: #ff4444; }
+        .warning { color: #ffeb3b; }
+        .highlight { border-left: 4px solid #4a90e2; padding-left: 10px; }
     </style>
 </head>
 <body>
 
-    <!-- 參數校準控制面板 (實踐參數外置化原則) -->
+    <!-- 參數外置化面板：將網址預載於 value 中，警衛不需輸入，但工程師仍可於畫面修改測試 -->
     <div class="panel">
         <h3>⚙️ 系統參數調校面板</h3>
         <div class="control-group">
-            <label>容忍誤差時間 (分鐘)：</label>
-            <input type="number" id="timeBuffer" value="10">
+            <label>後端 API 網址 (系統已預載)：</label>
+            <!-- ⚠️ 請將下方的 value 替換為您在步驟一取得的真實 GAS URL ⚠️ -->
+            <input type="text" id="apiUrl" value="https://script.google.com/macros/s/AKfycbzkf7HXFBuDYxYYdexeLqkBSV7_Bb4xrYRqEsei-DKXz6Mv34xi2uaQxnStFz8JnRy3SQ/exec" readonly style="background:#e9ecef; font-size: 10px; color:#555;">
         </div>
+        <div class="param-row">
+            <div class="control-group">
+                <label>容忍時間 (分)：</label>
+                <input type="number" id="timeBuffer" value="10" readonly style="background:#e9ecef;">
+            </div>
+            <div class="control-group">
+                <label>精度要求 (公尺)：</label>
+                <input type="number" id="gpsAccuracy" value="12" readonly style="background:#e9ecef;">
+            </div>
+        </div>
+    </div>
+
+    <!-- 打卡操作區 (通用化) -->
+    <div class="panel highlight">
+        <h3>📍 選擇當前巡邏站點</h3>
         <div class="control-group">
-            <label>GPS 精度要求 (公尺)：</label>
-            <input type="number" id="gpsAccuracy" value="50">
+            <select id="locationSelect">
+                <option value="">-- 請選擇您目前所在的巡邏點 --</option>
+                <option value="A01 >> 13F 恩典前頂樓">A01 >> 13F 恩典前頂樓</option>
+                <option value="A02 >> 11F 執行長室">A02 >> 11F 執行長室</option>
+                <option value="A03 >> 10F 護理站">A03 >> 10F 護理站</option>
+                <option value="A04 >> 09F 護理站">A04 >> 09F 護理站</option>
+                <option value="B01 >> 13F 恩典後頂樓">B01 >> 13F 恩典後頂樓</option>
+                <option value="C01 >> 05F 中國醫">C01 >> 05F 中國醫</option>
+                <option value="D01 >> 垃圾屋">D01 >> 垃圾屋</option>
+            </select>
         </div>
+        <button id="checkInBtn" onclick="executeCheckIn()">送出定位與打卡紀錄</button>
     </div>
 
-    <!-- 打卡操作區 -->
-    <div class="panel">
-        <h3>📍 巡邏點：A04 >> 09F護理站</h3>
-        <button onclick="executeCheckIn()">立即定位並打卡</button>
-    </div>
+    <div class="log" id="consoleLog">系統初始化完成，等待打卡指令...</div>
 
-    <div class="log" id="consoleLog">等待系統初始化...</div>
-
+    <!-- 邏輯區塊與上一版相同，繼承防呆與精度檢驗 -->
     <script>
-        // 錯誤隔離與日誌系統
-        function logMsg(msg, isError = false) {
+        function logMsg(msg, type = 'info') {
             const logBox = document.getElementById('consoleLog');
             const time = new Date().toLocaleTimeString();
-            const prefix = isError ? '[錯誤] ' : '[系統] ';
-            const color = isError ? 'class="error"' : '';
-            logBox.innerHTML += `\n<span ${color}>${time} ${prefix}${msg}</span>`;
-            console.log(`${prefix}${msg}`);
+            let prefix = '[系統] ', colorClass = '';
+            if (type === 'error') { prefix = '[錯誤] '; colorClass = 'class="error"'; }
+            if (type === 'warning') { prefix = '[警告] '; colorClass = 'class="warning"'; }
+            logBox.innerHTML += `\n<span ${colorClass}>${time} ${prefix}${msg}</span>`;
+            logBox.scrollTop = logBox.scrollHeight;
         }
 
-        // 核心邏輯：獲取位置與時間
         function executeCheckIn() {
-            logMsg("啟動定位模組...");
+            const apiUrl = document.getElementById('apiUrl').value.trim();
             const requiredAccuracy = document.getElementById('gpsAccuracy').value;
+            const locationStr = document.getElementById('locationSelect').value;
+            const btn = document.getElementById('checkInBtn');
 
-            if (!navigator.geolocation) {
-                logMsg("瀏覽器不支援 Geolocation API，請更換裝置。", true);
-                return;
-            }
+            if (!apiUrl || apiUrl === "在此貼上您的GAS網址") { logMsg("未設定有效的 API 網址，拒絕執行。", "error"); return; }
+            if (!locationStr) { logMsg("未選擇巡邏點！請先選擇您所在位置。", "error"); return; }
+            if (!navigator.geolocation) { logMsg("瀏覽器不支援定位功能。", "error"); return; }
+
+            btn.disabled = true;
+            btn.innerText = "資料驗證與傳輸中...";
+            logMsg(`準備打卡站點：${locationStr}`);
+            logMsg("啟動定位模組...");
 
             navigator.geolocation.getCurrentPosition(
                 (position) => {
                     const lat = position.coords.latitude.toFixed(6);
                     const lng = position.coords.longitude.toFixed(6);
-                    const accuracy = position.coords.accuracy.toFixed(1);
+                    const accuracy = parseFloat(position.coords.accuracy.toFixed(1));
+                    
+                    logMsg(`獲取成功：Lat ${lat}, Lng ${lng} (精度 ${accuracy}m)`);
 
-                    logMsg(`獲取座標成功：Lat ${lat}, Lng ${lng}`);
-                    logMsg(`當前定位精度：${accuracy} 公尺`);
-
-                    if (parseFloat(accuracy) > parseFloat(requiredAccuracy)) {
-                        logMsg(`警告：精度 ${accuracy}m 大於設定的容忍值 ${requiredAccuracy}m，室內訊號可能不良。`, true);
-                    } else {
-                        logMsg(`✅ 準備將資料打包傳送至資料庫 (待整合階段實作)`);
+                    let status = "正常";
+                    if (accuracy > parseFloat(requiredAccuracy)) {
+                        status = "精度異常(弱訊號)";
+                        logMsg(`警告：精度大於 ${requiredAccuracy}m，標記為弱訊號。`, "warning");
                     }
+
+                    const payload = {
+                        location: locationStr,
+                        lat: lat,
+                        lng: lng,
+                        accuracy: accuracy,
+                        status: status
+                    };
+
+                    logMsg("跨域寫入 Master Sheet 中...");
+
+                    fetch(apiUrl, { method: 'POST', body: JSON.stringify(payload) })
+                    .then(response => response.json())
+                    .then(result => {
+                        if (result.result === "success") {
+                            logMsg(`✅ [${locationStr}] 打卡成功！資料已匯總。`);
+                            document.getElementById('locationSelect').value = "";
+                        } else {
+                            logMsg(`寫入失敗：${result.message}`, "error");
+                        }
+                    })
+                    .catch(error => { logMsg(`網路傳輸錯誤：${error.message}`, "error"); })
+                    .finally(() => { btn.disabled = false; btn.innerText = "送出定位與打卡紀錄"; });
                 },
                 (error) => {
-                    // 精確錯誤碼回傳
                     let errorMsg = "未知錯誤";
                     switch(error.code) {
                         case error.PERMISSION_DENIED: errorMsg = "使用者拒絕提供位置授權"; break;
                         case error.POSITION_UNAVAILABLE: errorMsg = "無法獲取位置資訊 (訊號不良)"; break;
                         case error.TIMEOUT: errorMsg = "獲取位置超時"; break;
                     }
-                    logMsg(errorMsg, true);
+                    logMsg(errorMsg, "error");
+                    btn.disabled = false;
+                    btn.innerText = "重新定位與打卡";
                 },
                 { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
             );
