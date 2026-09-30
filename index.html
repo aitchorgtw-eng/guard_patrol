@@ -3,9 +3,10 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>巡邏打卡工具 (V11 全路線班表防呆版)</title>
+    <title>巡邏打卡工具 (V12 除錯強化版)</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
     <style>
+        /* 樣式與 V11 完全相同，保持穩定降級原則 */
         body { font-family: sans-serif; padding: 20px; background: #f4f4f9; margin: 0; }
         .panel { background: #fff; padding: 15px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); margin-bottom: 20px; }
         .control-group { margin-bottom: 10px; display: flex; flex-direction: column; }
@@ -34,7 +35,6 @@
 </head>
 <body>
 
-    <!-- 警衛唯一可見區域 -->
     <div class="panel highlight" id="guardPanel">
         <h3>📍 當前掃描站點</h3>
         <div id="lockWarning" class="lock-warning">⚠️ 系統鎖定：請掃描巡邏點 QR Code，禁止手動打卡。</div>
@@ -47,7 +47,6 @@
     <div class="log" id="consoleLog">系統初始化... 等待操作...</div>
     <span id="secretLock" onclick="verifyAdminPin()">🔏</span>
 
-    <!-- ================= 主管解鎖區域 ================= -->
     <div id="adminPanel">
         <h2 style="color: #9c27b0; text-align: center; border-bottom: 2px solid #9c27b0; padding-bottom: 10px;">🛡️ 主管控制中心</h2>
         
@@ -55,8 +54,8 @@
             <h3>⚙️ 系統參數調校</h3>
             <div class="control-group">
                 <label>API 網址：</label>
-                <!-- 保持 V10 網址不變，因後端未改 -->
-                <input type="text" id="apiUrl" value="https://script.google.com/macros/s/AKfycbymgBcvvzq45TznnxfayEYKOEFl2zxX3E-0SDoZjl0ZuRpkROjGaSFujEbFYx3nQ-ohtw/exec" readonly style="background:#e9ecef;">
+                <!-- 繼承 V11 網址 -->
+                <input type="text" id="apiUrl" value="https://script.google.com/macros/s/AKfycbyPZt5HnKH6CgjnFewkS0xaoI6K-glSMgI3o1oofxBB100oZS5p6uCxV1jf4e4U5EoGRw/exec" readonly style="background:#e9ecef;">
             </div>
             <div class="param-row">
                 <div class="control-group"><label>時間容忍 (分)：</label><input type="number" id="timeBuffer" value="10"></div>
@@ -69,11 +68,7 @@
             <h3>🖨️ 標籤產生器 (字串對齊版)</h3>
             <div class="control-group">
                 <select id="genLocationSelect">
-                    <!-- 🚨 V11 修正：確保 A99 與 C02 的字串格式完全一致 🚨 -->
-                    <optgroup label="路線 Z (測試線)">
-                        <option value="A99 >> 資訊室">A99 >> 資訊室</option>
-                        <option value="C02 >> 03F 茶水間">C02 >> 03F 茶水間</option>
-                    </optgroup>
+                    <optgroup label="路線 Z (測試線)"><option value="A99 >> 資訊室">A99 >> 資訊室</option><option value="C02 >> 03F 茶水間">C02 >> 03F 茶水間</option></optgroup>
                     <optgroup label="路線 A：恩典盼望線 (22:30~23:30)"><option value="A01 >> 13F 恩典前頂樓">A01 >> 13F 恩典前頂樓</option><option value="A04 >> 09F 護理站">A04 >> 09F 護理站</option></optgroup>
                     <optgroup label="路線 B：恩典後樓梯線 (24:00~00:30)"><option value="B01 >> 13F 恩典後頂樓">B01 >> 13F 恩典後頂樓</option></optgroup>
                     <optgroup label="路線 D：迦南+外圍線 (19:00~20:00)"><option value="D01 >> 垃圾屋">D01 >> 垃圾屋</option></optgroup>
@@ -85,7 +80,6 @@
 
         <div class="panel" style="background: #fff;">
             <h3>📊 全路線巡檢狀態儀表板</h3>
-            <p style="font-size:12px; color:#666;">註：已啟用 A, B, C, D, Z 完整排班防呆邏輯。</p>
             <button onclick="fetchDashboardData()" style="background: #388e3c; padding: 10px;">載入 / 更新儀表板</button>
             <div id="dashboardContainer" style="overflow-x: auto;"></div>
         </div>
@@ -114,22 +108,32 @@
             }
         });
 
+        // 🚨 V12 強化錯誤隔離機制 🚨
         function verifyAdminPin() {
             const pin = prompt("請輸入主管密碼：");
             if (!pin) return;
             const apiUrl = document.getElementById('apiUrl').value.trim();
-            logMsg("驗證主管權限中...");
+            logMsg("連線至資料庫驗證權限中...");
 
             fetch(apiUrl, { method: 'POST', body: JSON.stringify({ action: "verify_pin", pin: pin }) })
-            .then(res => res.json())
+            .then(res => {
+                if (!res.ok) throw new Error(`伺服器拒絕請求 (HTTP ${res.status})，請確認 GAS 是否已「建立新版本」。`);
+                return res.json();
+            })
             .then(result => {
                 if (result.result === "success") {
                     logMsg("✅ 解鎖成功。");
                     document.getElementById('adminPanel').style.display = 'block';
                     document.getElementById('guardPanel').style.display = 'none';
                     document.getElementById('secretLock').style.display = 'none';
-                } else { alert("密碼錯誤"); }
-            }).catch(e => logMsg("連線錯誤", "error"));
+                } else { 
+                    logMsg(`密碼錯誤：${result.message}`, "error");
+                    alert("密碼錯誤"); 
+                }
+            })
+            .catch(e => {
+                logMsg(`連線失敗：${e.message}`, "error");
+            });
         }
 
         function generateQRCode() {
@@ -170,89 +174,78 @@
             );
         }
 
-        // ================= V11 核心：全路線時間檢核引擎 =================
+        // V11 儀表板渲染邏輯繼承
         function fetchDashboardData() {
             const apiUrl = document.getElementById('apiUrl').value.trim();
             logMsg("載入儀表板資料中...");
             
             fetch(apiUrl, { method: 'POST', body: JSON.stringify({ action: "get_logs" }) })
-            .then(res => res.json())
+            .then(res => {
+                if (!res.ok) throw new Error("伺服器回應異常");
+                return res.json();
+            })
             .then(result => {
                 if(result.result === "success") {
                     renderDashboard(result.data);
                     logMsg("✅ 儀表板渲染完成。");
                 }
-            });
+            }).catch(e => logMsg(`載入失敗：${e.message}`, "error"));
         }
 
         function renderDashboard(rawData) {
             if (rawData.length <= 1) return; 
             const timeTol = parseInt(document.getElementById('timeBuffer').value);
-            
             let html = `<table><tr><th>打卡時間</th><th>站點</th><th>距離判定</th><th>時間判定</th></tr>`;
-            
             for (let i = rawData.length - 1; i > 0; i--) {
                 const row = rawData[i];
                 if (!row[0]) continue;
-                
                 const logTimeStr = row[0]; 
                 const location = row[1];
                 const distMsg = row[7] || ""; 
-                
                 let rowClass = "bg-green";
                 let timeStatus = "🟢 正常";
 
-                // 1. 優先檢查距離異常 (造假比遲到嚴重)
                 if (distMsg.includes("距離異常") || distMsg.includes("無基準資料")) {
                     rowClass = "bg-orange";
                 } 
-
-                // 2. 解析排班時間矩陣
                 let expectedRanges = [];
                 if (location.startsWith("A99")) {
-                    expectedRanges = [{start: 600, end: 630}, {start: 810, end: 840}]; // 10:00~10:30, 13:30~14:00
+                    expectedRanges = [{start: 600, end: 630}, {start: 810, end: 840}]; 
                 } else if (location.startsWith("A") || location.startsWith("C")) {
-                    expectedRanges = [{start: 1350, end: 1410}]; // 22:30~23:30
+                    expectedRanges = [{start: 1350, end: 1410}]; 
                 } else if (location.startsWith("D")) {
-                    expectedRanges = [{start: 1140, end: 1200}]; // 19:00~20:00
+                    expectedRanges = [{start: 1140, end: 1200}]; 
                 } else if (location.startsWith("B")) {
-                    expectedRanges = [{start: 0, end: 30}]; // 24:00(00:00) ~ 00:30 (跨日陷阱點)
+                    expectedRanges = [{start: 0, end: 30}]; 
                 }
 
-                // 3. 執行時間邏輯比對
                 if (expectedRanges.length > 0) {
                     const timeMatch = logTimeStr.match(/(\d{1,2}):(\d{2}):\d{2}/);
                     const isPM = logTimeStr.includes("下午");
-                    
                     if (timeMatch) {
                         let hours = parseInt(timeMatch[1]);
                         const mins = parseInt(timeMatch[2]);
                         if (isPM && hours !== 12) hours += 12;
                         if (!isPM && hours === 12) hours = 0;
                         const totalMins = hours * 60 + mins;
-                        
                         let timeValid = false;
                         for (let range of expectedRanges) {
                             let validStart = range.start - timeTol;
                             let validEnd = range.end + timeTol;
-                            
-                            // 模除轉化：處理 B 線跨日退回前一天 (如 23:50) 的負數邊界問題
                             if (validStart < 0) {
                                 if (totalMins >= (1440 + validStart) || totalMins <= validEnd) timeValid = true;
                             } else {
                                 if (totalMins >= validStart && totalMins <= validEnd) timeValid = true;
                             }
                         }
-                        
                         if (!timeValid) {
-                            rowClass = rowClass === "bg-orange" ? "bg-orange" : "bg-red"; // 若已是橘色則保留橘色
+                            rowClass = rowClass === "bg-orange" ? "bg-orange" : "bg-red"; 
                             timeStatus = "🔴 異常 (非排班時間)";
                         }
                     }
                 } else {
                     timeStatus = "⚪ 未知路線"; 
                 }
-
                 html += `<tr class="${rowClass}"><td>${logTimeStr}</td><td>${location}</td><td>${distMsg}</td><td>${timeStatus}</td></tr>`;
             }
             html += `</table>`;
