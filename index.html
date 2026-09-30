@@ -1,16 +1,15 @@
 <!DOCTYPE html>
 <html lang="zh-TW">
 <head>
-    <!-- ... (Head 設定與 CSS 樣式完全繼承上一版，為節省版面不重複列出) ... -->
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>巡邏打卡工具 (V4 串接上線版)</title>
+    <title>巡邏打卡工具 (V5 QR防偽版)</title>
     <style>
         body { font-family: sans-serif; padding: 20px; background: #f4f4f9; }
         .panel { background: #fff; padding: 15px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); margin-bottom: 20px; }
         .control-group { margin-bottom: 10px; display: flex; flex-direction: column; }
         label { font-weight: bold; font-size: 14px; margin-bottom: 5px; }
-        input[type="number"], input[type="text"], select { padding: 8px; font-size: 14px; width: 100%; box-sizing: border-box; }
+        input[type="number"], input[type="text"] { padding: 8px; font-size: 14px; width: 100%; box-sizing: border-box; }
         .param-row { display: flex; gap: 10px; }
         .param-row .control-group { flex: 1; }
         button { padding: 15px 20px; background: #4a90e2; color: #fff; border: none; border-radius: 4px; font-size: 18px; cursor: pointer; width: 100%; font-weight: bold;}
@@ -20,16 +19,17 @@
         .error { color: #ff4444; }
         .warning { color: #ffeb3b; }
         .highlight { border-left: 4px solid #4a90e2; padding-left: 10px; }
+        /* 針對防偽鎖死的特殊樣式 */
+        .lock-warning { color: #d32f2f; font-weight: bold; padding: 10px; background: #ffebee; border-radius: 4px; text-align: center; margin-bottom: 10px; display: none; }
     </style>
 </head>
 <body>
 
-    <!-- 參數外置化面板：將網址預載於 value 中，警衛不需輸入，但工程師仍可於畫面修改測試 -->
     <div class="panel">
         <h3>⚙️ 系統參數調校面板</h3>
         <div class="control-group">
-            <label>後端 API 網址 (系統已預載)：</label>
-            <!-- ⚠️ 請將下方的 value 替換為您在步驟一取得的真實 GAS URL ⚠️ -->
+            <label>後端 API 網址 (系統預載)：</label>
+            <!-- ⚠️ 請確保這裡是您真實的 GAS 網址 ⚠️ -->
             <input type="text" id="apiUrl" value="https://script.google.com/macros/s/AKfycbzkf7HXFBuDYxYYdexeLqkBSV7_Bb4xrYRqEsei-DKXz6Mv34xi2uaQxnStFz8JnRy3SQ/exec" readonly style="background:#e9ecef; font-size: 10px; color:#555;">
         </div>
         <div class="param-row">
@@ -44,27 +44,19 @@
         </div>
     </div>
 
-    <!-- 打卡操作區 (通用化) -->
+    <!-- 打卡操作區 (廢除手動下拉，改為網址注入) -->
     <div class="panel highlight">
-        <h3>📍 選擇當前巡邏站點</h3>
+        <h3>📍 當前掃描站點</h3>
+        <div id="lockWarning" class="lock-warning">⚠️ 系統鎖定：請使用相機掃描巡邏點 QR Code，禁止手動打卡。</div>
         <div class="control-group">
-            <select id="locationSelect">
-                <option value="">-- 請選擇您目前所在的巡邏點 --</option>
-                <option value="A01 >> 13F 恩典前頂樓">A01 >> 13F 恩典前頂樓</option>
-                <option value="A02 >> 11F 執行長室">A02 >> 11F 執行長室</option>
-                <option value="A03 >> 10F 護理站">A03 >> 10F 護理站</option>
-                <option value="A04 >> 09F 護理站">A04 >> 09F 護理站</option>
-                <option value="B01 >> 13F 恩典後頂樓">B01 >> 13F 恩典後頂樓</option>
-                <option value="C01 >> 05F 中國醫">C01 >> 05F 中國醫</option>
-                <option value="D01 >> 垃圾屋">D01 >> 垃圾屋</option>
-            </select>
+            <!-- 設定為 readonly，警衛絕對無法修改 -->
+            <input type="text" id="locationInput" value="" placeholder="等待 QR Code 參數載入..." readonly style="background:#fff3e0; font-size: 16px; font-weight: bold; color: #e65100; text-align: center;">
         </div>
-        <button id="checkInBtn" onclick="executeCheckIn()">送出定位與打卡紀錄</button>
+        <button id="checkInBtn" onclick="executeCheckIn()" disabled>送出定位與打卡紀錄</button>
     </div>
 
-    <div class="log" id="consoleLog">系統初始化完成，等待打卡指令...</div>
+    <div class="log" id="consoleLog">系統初始化... 檢查 QR Code 參數中...</div>
 
-    <!-- 邏輯區塊與上一版相同，繼承防呆與精度檢驗 -->
     <script>
         function logMsg(msg, type = 'info') {
             const logBox = document.getElementById('consoleLog');
@@ -76,19 +68,38 @@
             logBox.scrollTop = logBox.scrollHeight;
         }
 
+        // --- 核心變動：解析 URL 參數 ---
+        document.addEventListener('DOMContentLoaded', () => {
+            const urlParams = new URLSearchParams(window.location.search);
+            const locParam = urlParams.get('loc'); // 抓取 ?loc= 後面的值
+            
+            const locationInput = document.getElementById('locationInput');
+            const checkInBtn = document.getElementById('checkInBtn');
+            const lockWarning = document.getElementById('lockWarning');
+
+            if (locParam) {
+                // 資料清洗與解碼
+                const decodedLoc = decodeURIComponent(locParam);
+                locationInput.value = decodedLoc;
+                checkInBtn.disabled = false; // 解鎖按鈕
+                logMsg(`✅ 成功辨識 QR Code：${decodedLoc}`);
+            } else {
+                // 沒有參數，觸發防護機制
+                lockWarning.style.display = 'block';
+                logMsg("未偵測到地點參數，拒絕解鎖打卡功能。", "error");
+            }
+        });
+
         function executeCheckIn() {
             const apiUrl = document.getElementById('apiUrl').value.trim();
             const requiredAccuracy = document.getElementById('gpsAccuracy').value;
-            const locationStr = document.getElementById('locationSelect').value;
+            const locationStr = document.getElementById('locationInput').value; // 改由 input 取值
             const btn = document.getElementById('checkInBtn');
 
-            if (!apiUrl || apiUrl === "在此貼上您的GAS網址") { logMsg("未設定有效的 API 網址，拒絕執行。", "error"); return; }
-            if (!locationStr) { logMsg("未選擇巡邏點！請先選擇您所在位置。", "error"); return; }
-            if (!navigator.geolocation) { logMsg("瀏覽器不支援定位功能。", "error"); return; }
+            if (!locationStr) return; // 雙重防呆
 
             btn.disabled = true;
             btn.innerText = "資料驗證與傳輸中...";
-            logMsg(`準備打卡站點：${locationStr}`);
             logMsg("啟動定位模組...");
 
             navigator.geolocation.getCurrentPosition(
@@ -97,12 +108,9 @@
                     const lng = position.coords.longitude.toFixed(6);
                     const accuracy = parseFloat(position.coords.accuracy.toFixed(1));
                     
-                    logMsg(`獲取成功：Lat ${lat}, Lng ${lng} (精度 ${accuracy}m)`);
-
                     let status = "正常";
                     if (accuracy > parseFloat(requiredAccuracy)) {
                         status = "精度異常(弱訊號)";
-                        logMsg(`警告：精度大於 ${requiredAccuracy}m，標記為弱訊號。`, "warning");
                     }
 
                     const payload = {
@@ -119,22 +127,26 @@
                     .then(response => response.json())
                     .then(result => {
                         if (result.result === "success") {
-                            logMsg(`✅ [${locationStr}] 打卡成功！資料已匯總。`);
-                            document.getElementById('locationSelect').value = "";
+                            logMsg(`✅ [${locationStr}] 打卡成功！`);
+                            btn.innerText = "打卡完成，請關閉網頁"; // 成功後直接鎖定畫面
                         } else {
                             logMsg(`寫入失敗：${result.message}`, "error");
+                            btn.disabled = false;
+                            btn.innerText = "重試打卡";
                         }
                     })
-                    .catch(error => { logMsg(`網路傳輸錯誤：${error.message}`, "error"); })
-                    .finally(() => { btn.disabled = false; btn.innerText = "送出定位與打卡紀錄"; });
+                    .catch(error => { 
+                        logMsg(`網路傳輸錯誤：${error.message}`, "error"); 
+                        btn.disabled = false;
+                        btn.innerText = "重試打卡";
+                    });
                 },
                 (error) => {
                     let errorMsg = "未知錯誤";
-                    switch(error.code) {
-                        case error.PERMISSION_DENIED: errorMsg = "使用者拒絕提供位置授權"; break;
-                        case error.POSITION_UNAVAILABLE: errorMsg = "無法獲取位置資訊 (訊號不良)"; break;
-                        case error.TIMEOUT: errorMsg = "獲取位置超時"; break;
-                    }
+                    if(error.code === error.PERMISSION_DENIED) errorMsg = "使用者拒絕提供位置授權";
+                    if(error.code === error.POSITION_UNAVAILABLE) errorMsg = "無法獲取位置資訊 (訊號不良)";
+                    if(error.code === error.TIMEOUT) errorMsg = "獲取位置超時";
+                    
                     logMsg(errorMsg, "error");
                     btn.disabled = false;
                     btn.innerText = "重新定位與打卡";
