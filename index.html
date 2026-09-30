@@ -3,8 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>巡邏打卡工具 (V6 雙模式完整版)</title>
-    <!-- 引入穩定的 qrcode.js CDN -->
+    <title>巡邏打卡工具 (V7 環境防禦版)</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
     <style>
         body { font-family: sans-serif; padding: 20px; background: #f4f4f9; margin: 0; }
@@ -27,10 +26,29 @@
         #adminPanel { display: none; border: 2px dashed #9c27b0; background: #f3e5f5; }
         #qrcode-container { margin-top: 15px; display: flex; flex-direction: column; align-items: center; background: #fff; padding: 20px; border-radius: 8px; }
         .admin-toggle { background: transparent; color: #9c27b0; font-size: 12px; border: 1px solid #9c27b0; padding: 5px; width: auto; margin: 20px auto; display: block; }
+        
+        /* 🚨 V7 新增：環境警告遮罩 🚨 */
+        #browserWarning {
+            display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(211, 47, 47, 0.95); color: white; z-index: 9999;
+            flex-direction: column; justify-content: center; align-items: center; padding: 20px; box-sizing: border-box; text-align: center;
+        }
+        #browserWarning h1 { font-size: 24px; margin-bottom: 10px; }
+        #browserWarning p { font-size: 18px; line-height: 1.5; }
     </style>
 </head>
 <body>
 
+    <!-- 🚨 V7 環境防護遮罩 🚨 -->
+    <div id="browserWarning">
+        <h1>⚠️ 系統阻擋：環境不支援</h1>
+        <p>您目前使用的是 LINE 或其他內建瀏覽器，系統無法取得 GPS 定位權限。</p>
+        <p style="font-weight: bold; background: #fff; color: #d32f2f; padding: 10px; border-radius: 5px; margin-top: 20px;">
+            👉 請點擊右上角 (或右下角) 的「選單 ⋮」<br>選擇「以預設瀏覽器開啟」或「在 Chrome/Safari 開啟」來進行打卡。
+        </p>
+    </div>
+
+    <!-- 系統主體與 V6 完全相同 -->
     <div class="panel">
         <h3>⚙️ 系統參數調校面板</h3>
         <div class="control-group">
@@ -49,7 +67,6 @@
         </div>
     </div>
 
-    <!-- 打卡操作區 (警衛視角) -->
     <div class="panel highlight" id="guardPanel">
         <h3>📍 當前掃描站點</h3>
         <div id="lockWarning" class="lock-warning">⚠️ 系統鎖定：請使用相機掃描巡邏點 QR Code，禁止手動打卡。</div>
@@ -59,12 +76,10 @@
         <button id="checkInBtn" onclick="executeCheckIn()" disabled>送出定位與打卡紀錄</button>
     </div>
 
-    <div class="log" id="consoleLog">系統初始化... 檢查 URL 參數中...</div>
+    <div class="log" id="consoleLog">系統初始化... 檢查運行環境中...</div>
 
-    <!-- 管理員切換按鈕 -->
     <button class="admin-toggle" onclick="toggleAdminPanel()">🔧 切換至 QR Code 產生器 (主管專用)</button>
 
-    <!-- QR Code 產生區 (主管視角) -->
     <div class="panel" id="adminPanel">
         <h3 style="color: #9c27b0;">🖨️ QR Code 標籤產生器</h3>
         <div class="control-group">
@@ -89,7 +104,6 @@
     </div>
 
     <script>
-        // --- 日誌系統 ---
         function logMsg(msg, type = 'info') {
             const logBox = document.getElementById('consoleLog');
             const time = new Date().toLocaleTimeString();
@@ -100,10 +114,18 @@
             logBox.scrollTop = logBox.scrollHeight;
         }
 
-        // --- 核心變數與防偽解析 ---
         let qrcodeObj = null;
 
         document.addEventListener('DOMContentLoaded', () => {
+            // 🚨 步驟 1：優先偵測危險運行環境 (LINE/FB/IG) 🚨
+            const userAgent = navigator.userAgent || navigator.vendor || window.opera;
+            if (/Line|FBAV|Instagram/i.test(userAgent)) {
+                document.getElementById('browserWarning').style.display = 'flex';
+                document.body.style.overflow = 'hidden'; // 鎖死背景滾動
+                return; // 終止後續邏輯，強制使用者跳轉
+            }
+
+            // 步驟 2：執行正常的 QR 參數解析
             const urlParams = new URLSearchParams(window.location.search);
             const locParam = urlParams.get('loc'); 
             
@@ -122,41 +144,27 @@
             }
         });
 
-        // --- 管理員面板切換 ---
         function toggleAdminPanel() {
             const panel = document.getElementById('adminPanel');
             panel.style.display = (panel.style.display === 'none' || panel.style.display === '') ? 'block' : 'none';
         }
 
-        // --- QR Code 生成邏輯 ---
         function generateQRCode() {
             const loc = document.getElementById('genLocationSelect').value;
             const qrContainer = document.getElementById('qrcode');
             const qrText = document.getElementById('qr-text');
-            
-            // 抓取當前網頁的乾淨網址 (不含參數)
             const baseUrl = window.location.origin + window.location.pathname;
-            // 組合專屬網址
             const targetUrl = `${baseUrl}?loc=${encodeURIComponent(loc)}`;
             
-            // 清除舊的 QR
             qrContainer.innerHTML = '';
-            
-            // 生成新的 QR
             qrcodeObj = new QRCode(qrContainer, {
-                text: targetUrl,
-                width: 200,
-                height: 200,
-                colorDark : "#000000",
-                colorLight : "#ffffff",
-                correctLevel : QRCode.CorrectLevel.H
+                text: targetUrl, width: 200, height: 200,
+                colorDark : "#000000", colorLight : "#ffffff", correctLevel : QRCode.CorrectLevel.H
             });
-            
             qrText.innerText = `巡邏點：${loc}`;
             logMsg(`已產生 [${loc}] 的 QR Code，網址綁定為：${targetUrl}`);
         }
 
-        // --- 打卡與定位邏輯 (繼承 V5) ---
         function executeCheckIn() {
             const apiUrl = document.getElementById('apiUrl').value.trim();
             const requiredAccuracy = document.getElementById('gpsAccuracy').value;
@@ -167,7 +175,7 @@
 
             btn.disabled = true;
             btn.innerText = "資料驗證與傳輸中...";
-            logMsg("啟動定位模組...");
+            logMsg("啟動定位模組 (系統將請求您的 GPS 權限)...");
 
             navigator.geolocation.getCurrentPosition(
                 (position) => {
@@ -202,7 +210,7 @@
                 },
                 (error) => {
                     let errorMsg = "未知錯誤";
-                    if(error.code === error.PERMISSION_DENIED) errorMsg = "使用者拒絕提供位置授權";
+                    if(error.code === error.PERMISSION_DENIED) errorMsg = "使用者拒絕提供位置授權 (請至手機設定開啟權限)";
                     if(error.code === error.POSITION_UNAVAILABLE) errorMsg = "無法獲取位置資訊 (訊號不良)";
                     if(error.code === error.TIMEOUT) errorMsg = "獲取位置超時";
                     logMsg(errorMsg, "error");
