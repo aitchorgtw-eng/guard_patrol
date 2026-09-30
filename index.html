@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>巡邏打卡工具 (V1 MVP 測試版)</title>
+    <style>
+        body { font-family: sans-serif; padding: 20px; background: #f4f4f9; }
+        .panel { background: #fff; padding: 15px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); margin-bottom: 20px; }
+        .control-group { margin-bottom: 10px; }
+        label { font-weight: bold; font-size: 14px; }
+        input { padding: 5px; width: 60px; text-align: center; }
+        button { padding: 10px 20px; background: #4a90e2; color: #fff; border: none; border-radius: 4px; font-size: 16px; cursor: pointer; }
+        button:active { background: #357abd; }
+        .log { margin-top: 20px; font-family: monospace; background: #222; color: #0f0; padding: 10px; border-radius: 4px; white-space: pre-wrap;}
+        .error { color: #ff4444; }
+    </style>
+</head>
+<body>
+
+    <!-- 參數校準控制面板 (實踐參數外置化原則) -->
+    <div class="panel">
+        <h3>⚙️ 系統參數調校面板</h3>
+        <div class="control-group">
+            <label>容忍誤差時間 (分鐘)：</label>
+            <input type="number" id="timeBuffer" value="10">
+        </div>
+        <div class="control-group">
+            <label>GPS 精度要求 (公尺)：</label>
+            <input type="number" id="gpsAccuracy" value="50">
+        </div>
+    </div>
+
+    <!-- 打卡操作區 -->
+    <div class="panel">
+        <h3>📍 巡邏點：A04 >> 09F護理站</h3>
+        <button onclick="executeCheckIn()">立即定位並打卡</button>
+    </div>
+
+    <div class="log" id="consoleLog">等待系統初始化...</div>
+
+    <script>
+        // 錯誤隔離與日誌系統
+        function logMsg(msg, isError = false) {
+            const logBox = document.getElementById('consoleLog');
+            const time = new Date().toLocaleTimeString();
+            const prefix = isError ? '[錯誤] ' : '[系統] ';
+            const color = isError ? 'class="error"' : '';
+            logBox.innerHTML += `\n<span ${color}>${time} ${prefix}${msg}</span>`;
+            console.log(`${prefix}${msg}`);
+        }
+
+        // 核心邏輯：獲取位置與時間
+        function executeCheckIn() {
+            logMsg("啟動定位模組...");
+            const requiredAccuracy = document.getElementById('gpsAccuracy').value;
+
+            if (!navigator.geolocation) {
+                logMsg("瀏覽器不支援 Geolocation API，請更換裝置。", true);
+                return;
+            }
+
+            navigator.geolocation.getCurrentPosition(
+                (position) => {
+                    const lat = position.coords.latitude.toFixed(6);
+                    const lng = position.coords.longitude.toFixed(6);
+                    const accuracy = position.coords.accuracy.toFixed(1);
+
+                    logMsg(`獲取座標成功：Lat ${lat}, Lng ${lng}`);
+                    logMsg(`當前定位精度：${accuracy} 公尺`);
+
+                    if (parseFloat(accuracy) > parseFloat(requiredAccuracy)) {
+                        logMsg(`警告：精度 ${accuracy}m 大於設定的容忍值 ${requiredAccuracy}m，室內訊號可能不良。`, true);
+                    } else {
+                        logMsg(`✅ 準備將資料打包傳送至資料庫 (待整合階段實作)`);
+                    }
+                },
+                (error) => {
+                    // 精確錯誤碼回傳
+                    let errorMsg = "未知錯誤";
+                    switch(error.code) {
+                        case error.PERMISSION_DENIED: errorMsg = "使用者拒絕提供位置授權"; break;
+                        case error.POSITION_UNAVAILABLE: errorMsg = "無法獲取位置資訊 (訊號不良)"; break;
+                        case error.TIMEOUT: errorMsg = "獲取位置超時"; break;
+                    }
+                    logMsg(errorMsg, true);
+                },
+                { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+            );
+        }
+    </script>
+</body>
+</html>
