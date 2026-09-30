@@ -3,10 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>巡邏打卡工具 (V8 完整站點與防護版)</title>
+    <title>巡邏打卡工具 (V9 雲端權限版)</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
     <style>
-        /* 核心樣式繼承，移除主管按鈕樣式 */
         body { font-family: sans-serif; padding: 20px; background: #f4f4f9; margin: 0; }
         .panel { background: #fff; padding: 15px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); margin-bottom: 20px; }
         .control-group { margin-bottom: 10px; display: flex; flex-direction: column; }
@@ -23,44 +22,43 @@
         .highlight { border-left: 4px solid #4a90e2; padding-left: 10px; }
         .lock-warning { color: #d32f2f; font-weight: bold; padding: 10px; background: #ffebee; border-radius: 4px; text-align: center; margin-bottom: 10px; display: none; }
         
-        /* 🚨 V8 主管面板預設絕對隱藏 🚨 */
         #adminPanel { display: none; border: 2px dashed #9c27b0; background: #f3e5f5; }
         #qrcode-container { margin-top: 15px; display: flex; flex-direction: column; align-items: center; background: #fff; padding: 20px; border-radius: 8px; }
         
         #browserWarning { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(211, 47, 47, 0.95); color: white; z-index: 9999; flex-direction: column; justify-content: center; align-items: center; padding: 20px; box-sizing: border-box; text-align: center; }
         #browserWarning h1 { font-size: 24px; margin-bottom: 10px; }
         #browserWarning p { font-size: 18px; line-height: 1.5; }
+
+        /* 隱蔽鎖頭樣式 */
+        #secretLock { display: block; text-align: center; margin-top: 30px; font-size: 24px; opacity: 0.15; cursor: pointer; user-select: none; }
     </style>
 </head>
 <body>
 
     <div id="browserWarning">
         <h1>⚠️ 系統阻擋：環境不支援</h1>
-        <p>您目前使用的是 LINE 或其他內建瀏覽器，系統無法取得 GPS 定位權限。</p>
-        <p style="font-weight: bold; background: #fff; color: #d32f2f; padding: 10px; border-radius: 5px; margin-top: 20px;">👉 請點擊右上角「選單 ⋮」選擇「以預設瀏覽器開啟」。</p>
+        <p>您目前使用的是 LINE 或內建瀏覽器，無法取得 GPS 定位。</p>
+        <p style="font-weight: bold; background: #fff; color: #d32f2f; padding: 10px; border-radius: 5px; margin-top: 20px;">👉 請點選右上角「選單 ⋮」以預設瀏覽器開啟。</p>
     </div>
 
-    <!-- 參數面板 (保留供環境連線檢視) -->
     <div class="panel">
         <h3>⚙️ 系統參數調校面板</h3>
         <div class="control-group">
             <label>後端 API 網址 (系統預載)：</label>
-            <input type="text" id="apiUrl" value="
-https://script.google.com/macros/s/AKfycbyf-FCecsNUOWWS3repfDsg8YHEk6zhUNHoOPXwMFW93aF8_ch3w5QOW_nb-WgzWof8gQ/exec" readonly style="background:#e9ecef; font-size: 10px; color:#555;">
+            <!-- ⚠️ 記得替換為您 V9 重新部署後的 GAS URL ⚠️ -->
+            <input type="text" id="apiUrl" value="https://script.google.com/macros/s/AKfycbzhu2v1lOj8Av_WAt3lMxxTL_Kgbbf2zh38BIql91M_C-qMqEd5TfU93s5_ekcxpYe-Ow/exec" readonly style="background:#e9ecef; font-size: 10px; color:#555;">
         </div>
         <div class="param-row">
             <div class="control-group">
-                <label>容忍時間 (分)：</label>
-                <input type="number" id="timeBuffer" value="10" readonly style="background:#e9ecef;">
+                <label>容忍時間 (分)：</label><input type="number" id="timeBuffer" value="10" readonly style="background:#e9ecef;">
             </div>
             <div class="control-group">
-                <label>精度要求 (公尺)：</label>
-                <input type="number" id="gpsAccuracy" value="12" readonly style="background:#e9ecef;">
+                <label>精度要求 (公尺)：</label><input type="number" id="gpsAccuracy" value="12" readonly style="background:#e9ecef;">
             </div>
         </div>
     </div>
 
-    <!-- 警衛打卡視角 -->
+    <!-- 警衛視角 -->
     <div class="panel highlight" id="guardPanel">
         <h3>📍 當前掃描站點</h3>
         <div id="lockWarning" class="lock-warning">⚠️ 系統鎖定：請使用相機掃描巡邏點 QR Code，禁止手動打卡。</div>
@@ -72,71 +70,28 @@ https://script.google.com/macros/s/AKfycbyf-FCecsNUOWWS3repfDsg8YHEk6zhUNHoOPXwM
 
     <div class="log" id="consoleLog">系統初始化... 檢查運行環境中...</div>
 
-    <!-- 🚨 V8 主管 QR 產生器 (預設隱藏，需靠路由喚醒) 🚨 -->
+    <!-- 主管 QR 產生器 (由密碼解鎖) -->
     <div class="panel" id="adminPanel">
-        <h3 style="color: #9c27b0;">🖨️ QR Code 標籤產生器 (最高權限模式)</h3>
+        <h3 style="color: #9c27b0;">🖨️ QR Code 標籤產生器 (主管模式已解鎖)</h3>
         <div class="control-group">
             <label>1. 選擇要建立 QR Code 的巡邏點：</label>
             <select id="genLocationSelect">
-                <!-- 根據提供的巡邏表完整建置 40 個站點 -->
-                <optgroup label="路線 A：恩典盼望線">
-                    <option value="A01 >> 13F 恩典前頂樓">A01 >> 13F 恩典前頂樓</option>
-                    <option value="A02 >> 11F 執行長室">A02 >> 11F 執行長室</option>
-                    <option value="A03 >> 10F 護理站">A03 >> 10F 護理站</option>
-                    <option value="A04 >> 09F 護理站">A04 >> 09F 護理站</option>
-                    <option value="A05 >> 08F 護理站">A05 >> 08F 護理站</option>
-                    <option value="A06 >> 07F 員工廁所外">A06 >> 07F 員工廁所外</option>
-                    <option value="A07 >> 06F 醫務部外">A07 >> 06F 醫務部外</option>
-                    <option value="A08 >> 05F 親子廁所外">A08 >> 05F 親子廁所外</option>
-                    <option value="A16 >> 03F 恩典樓">A16 >> 03F 恩典樓</option>
-                    <option value="A09 >> 03F 盼望樓治療室">A09 >> 03F 盼望樓治療室</option>
-                    <option value="A10 >> 02F 門診大廳">A10 >> 02F 門診大廳</option>
-                    <option value="A11 >> 01F 掛號大廳">A11 >> 01F 掛號大廳</option>
-                    <option value="A12 >> B1 工務室">A12 >> B1 工務室</option>
-                    <option value="A13 >> B1 放腫科辦公室">A13 >> B1 放腫科辦公室</option>
-                    <option value="A14 >> B2 停車場">A14 >> B2 停車場</option>
-                    <option value="A15 >> B3 停車場">A15 >> B3 停車場</option>
-                </optgroup>
-                <optgroup label="路線 B：恩典後樓梯線">
-                    <option value="B01 >> 13F 恩典後頂樓">B01 >> 13F 恩典後頂樓</option>
-                    <option value="B02 >> 11F 淨水 RO 機房">B02 >> 11F 淨水 RO 機房</option>
-                    <option value="B03 >> 10F 禱告室">B03 >> 10F 禱告室</option>
-                    <option value="B04 >> 09F 禱告室">B04 >> 09F 禱告室</option>
-                    <option value="B05 >> 08F 禱告室">B05 >> 08F 禱告室</option>
-                    <option value="B06 >> 06F 貨運樓梯間">B06 >> 06F 貨運樓梯間</option>
-                    <option value="B07 >> 03F 貨運樓梯間">B07 >> 03F 貨運樓梯間</option>
-                    <option value="B08 >> B1 車道口">B08 >> B1 車道口</option>
-                    <option value="B09 >> B3 貨運樓梯間">B09 >> B3 貨運樓梯間</option>
-                </optgroup>
-                <optgroup label="路線 C：慈愛樓線">
-                    <option value="C01 >> 05F 中醫">C01 >> 05F 中醫</option>
-                    <option value="C02 >> 03F 茶水間">C02 >> 03F 茶水間</option>
-                    <option value="C03 >> 02F 牙科">C03 >> 02F 牙科</option>
-                </optgroup>
-                <optgroup label="路線 D：迦南+外圍線">
-                    <option value="D01 >> 垃圾屋">D01 >> 垃圾屋</option>
-                    <option value="D02 >> 前面頂樓">D02 >> 前面頂樓</option>
-                    <option value="D03 >> 04F 會館前門">D03 >> 04F 會館前門</option>
-                    <option value="D04 >> 02F 樓梯間">D04 >> 02F 樓梯間</option>
-                    <option value="D05 >> B1F 停車場">D05 >> B1F 停車場</option>
-                    <option value="D06 >> 後方頂樓">D06 >> 後方頂樓</option>
-                    <option value="D07 >> 04F 會館後門">D07 >> 04F 會館後門</option>
-                    <option value="D08 >> 01F 後門">D08 >> 01F 後門</option>
-                    <option value="D09 >> 迦南後院">D09 >> 迦南後院</option>
-                    <option value="D10 >> 四維路停車場">D10 >> 四維路停車場</option>
-                    <option value="D11 >> 開封街大門">D11 >> 開封街大門</option>
-                    <option value="D12 >> 員工機車棚">D12 >> 員工機車棚</option>
-                </optgroup>
+                <!-- A線 -->
+                <optgroup label="路線 A：恩典盼望線"><option value="A01 >> 13F 恩典前頂樓">A01 >> 13F 恩典前頂樓</option><option value="A02 >> 11F 執行長室">A02 >> 11F 執行長室</option><option value="A03 >> 10F 護理站">A03 >> 10F 護理站</option><option value="A04 >> 09F 護理站">A04 >> 09F 護理站</option><option value="A05 >> 08F 護理站">A05 >> 08F 護理站</option><option value="A06 >> 07F 員工廁所外">A06 >> 07F 員工廁所外</option><option value="A07 >> 06F 醫務部外">A07 >> 06F 醫務部外</option><option value="A08 >> 05F 親子廁所外">A08 >> 05F 親子廁所外</option><option value="A16 >> 03F 恩典樓">A16 >> 03F 恩典樓</option><option value="A09 >> 03F 盼望樓治療室">A09 >> 03F 盼望樓治療室</option><option value="A10 >> 02F 門診大廳">A10 >> 02F 門診大廳</option><option value="A11 >> 01F 掛號大廳">A11 >> 01F 掛號大廳</option><option value="A12 >> B1 工務室">A12 >> B1 工務室</option><option value="A13 >> B1 放腫科辦公室">A13 >> B1 放腫科辦公室</option><option value="A14 >> B2 停車場">A14 >> B2 停車場</option><option value="A15 >> B3 停車場">A15 >> B3 停車場</option></optgroup>
+                <!-- B線 -->
+                <optgroup label="路線 B：恩典後樓梯線"><option value="B01 >> 13F 恩典後頂樓">B01 >> 13F 恩典後頂樓</option><option value="B02 >> 11F 淨水 RO 機房">B02 >> 11F 淨水 RO 機房</option><option value="B03 >> 10F 禱告室">B03 >> 10F 禱告室</option><option value="B04 >> 09F 禱告室">B04 >> 09F 禱告室</option><option value="B05 >> 08F 禱告室">B05 >> 08F 禱告室</option><option value="B06 >> 06F 貨運樓梯間">B06 >> 06F 貨運樓梯間</option><option value="B07 >> 03F 貨運樓梯間">B07 >> 03F 貨運樓梯間</option><option value="B08 >> B1 車道口">B08 >> B1 車道口</option><option value="B09 >> B3 貨運樓梯間">B09 >> B3 貨運樓梯間</option></optgroup>
+                <!-- C線 -->
+                <optgroup label="路線 C：慈愛樓線"><option value="C01 >> 05F 中醫">C01 >> 05F 中醫</option><option value="C02 >> 03F 茶水間">C02 >> 03F 茶水間</option><option value="C03 >> 02F 牙科">C03 >> 02F 牙科</option></optgroup>
+                <!-- D線 -->
+                <optgroup label="路線 D：迦南+外圍線"><option value="D01 >> 垃圾屋">D01 >> 垃圾屋</option><option value="D02 >> 前面頂樓">D02 >> 前面頂樓</option><option value="D03 >> 04F 會館前門">D03 >> 04F 會館前門</option><option value="D04 >> 02F 樓梯間">D04 >> 02F 樓梯間</option><option value="D05 >> B1F 停車場">D05 >> B1F 停車場</option><option value="D06 >> 後方頂樓">D06 >> 後方頂樓</option><option value="D07 >> 04F 會館後門">D07 >> 04F 會館後門</option><option value="D08 >> 01F 後門">D08 >> 01F 後門</option><option value="D09 >> 迦南後院">D09 >> 迦南後院</option><option value="D10 >> 四維路停車場">D10 >> 四維路停車場</option><option value="D11 >> 開封街大門">D11 >> 開封街大門</option><option value="D12 >> 員工機車棚">D12 >> 員工機車棚</option></optgroup>
             </select>
         </div>
         <button onclick="generateQRCode()" style="background: #9c27b0;">2. 產生該點專屬 QR Code</button>
-        
-        <div id="qrcode-container">
-            <div id="qrcode"></div>
-            <p id="qr-text" style="font-weight: bold; margin-top: 10px; font-size: 18px; color: #333;"></p>
-            <p style="font-size: 12px; color: #666;">(請截圖或列印此 QR Code，張貼於該巡邏點現場)</p>
-        </div>
+        <div id="qrcode-container"><div id="qrcode"></div><p id="qr-text" style="font-weight: bold; margin-top: 10px; font-size: 18px; color: #333;"></p></div>
     </div>
+
+    <!-- 隱蔽解鎖觸發點 -->
+    <span id="secretLock" onclick="verifyAdminPin()">🔏</span>
 
     <script>
         function logMsg(msg, type = 'info') {
@@ -161,77 +116,74 @@ https://script.google.com/macros/s/AKfycbyf-FCecsNUOWWS3repfDsg8YHEk6zhUNHoOPXwM
 
             const urlParams = new URLSearchParams(window.location.search);
             const locParam = urlParams.get('loc'); 
-            const modeParam = urlParams.get('mode'); // 🚨 V8 讀取隱藏路由參數
             
-            const locationInput = document.getElementById('locationInput');
-            const checkInBtn = document.getElementById('checkInBtn');
-            const lockWarning = document.getElementById('lockWarning');
-            const adminPanel = document.getElementById('adminPanel');
-            const guardPanel = document.getElementById('guardPanel');
-
-            // 路由邏輯分配
-            if (modeParam === 'setup') {
-                // 主管模式
-                adminPanel.style.display = 'block';
-                guardPanel.style.display = 'none'; // 隱藏打卡區避免混淆
-                logMsg("🔧 已進入主管建置模式。請選擇站點並產生 QR Code。");
-            } else if (locParam) {
-                // 警衛正常掃描模式
-                const decodedLoc = decodeURIComponent(locParam);
-                locationInput.value = decodedLoc;
-                checkInBtn.disabled = false;
-                logMsg(`✅ 成功辨識 QR Code：${decodedLoc}，系統解鎖。`);
+            if (locParam) {
+                document.getElementById('locationInput').value = decodeURIComponent(locParam);
+                document.getElementById('checkInBtn').disabled = false;
+                logMsg(`✅ 成功辨識 QR Code：${decodeURIComponent(locParam)}，系統解鎖。`);
             } else {
-                // 違規或未掃描模式
-                lockWarning.style.display = 'block';
+                document.getElementById('lockWarning').style.display = 'block';
                 logMsg("未偵測到地點參數，拒絕解鎖打卡功能。", "error");
             }
         });
 
+        // 🚨 呼叫 GAS 進行密碼驗證 🚨
+        function verifyAdminPin() {
+            const pin = prompt("請輸入主管查核密碼：");
+            if (!pin) return;
+
+            const apiUrl = document.getElementById('apiUrl').value.trim();
+            logMsg("連線至資料庫驗證密碼中...");
+
+            fetch(apiUrl, {
+                method: 'POST',
+                body: JSON.stringify({ action: "verify_pin", pin: pin })
+            })
+            .then(response => response.json())
+            .then(result => {
+                if (result.result === "success") {
+                    logMsg("✅ 密碼驗證通過，已開啟主管面板。");
+                    document.getElementById('adminPanel').style.display = 'block';
+                    document.getElementById('guardPanel').style.display = 'none';
+                    document.getElementById('secretLock').style.display = 'none';
+                } else {
+                    logMsg(`密碼錯誤：${result.message}`, "error");
+                    alert("密碼錯誤！");
+                }
+            })
+            .catch(error => { logMsg(`網路連線異常：${error.message}`, "error"); });
+        }
+
         function generateQRCode() {
             const loc = document.getElementById('genLocationSelect').value;
             const qrContainer = document.getElementById('qrcode');
-            const qrText = document.getElementById('qr-text');
-            const baseUrl = window.location.origin + window.location.pathname;
-            
-            // 🚨 產生的 QR 網址只帶 loc，絕對不包含 mode=setup
-            const targetUrl = `${baseUrl}?loc=${encodeURIComponent(loc)}`;
-            
+            const targetUrl = `${window.location.origin}${window.location.pathname}?loc=${encodeURIComponent(loc)}`;
             qrContainer.innerHTML = '';
-            qrcodeObj = new QRCode(qrContainer, {
-                text: targetUrl, width: 200, height: 200,
-                colorDark : "#000000", colorLight : "#ffffff", correctLevel : QRCode.CorrectLevel.H
-            });
-            qrText.innerText = `巡邏點：${loc}`;
-            logMsg(`已產生 [${loc}] 的 QR Code，網址綁定為：${targetUrl}`);
+            qrcodeObj = new QRCode(qrContainer, { text: targetUrl, width: 200, height: 200, colorDark : "#000000", colorLight : "#ffffff", correctLevel : QRCode.CorrectLevel.H });
+            document.getElementById('qr-text').innerText = `巡邏點：${loc}`;
+            logMsg(`已產生 [${loc}] 的 QR Code`);
         }
 
+        // 打卡邏輯需加上 action: "check_in" 參數
         function executeCheckIn() {
             const apiUrl = document.getElementById('apiUrl').value.trim();
-            const requiredAccuracy = document.getElementById('gpsAccuracy').value;
             const locationStr = document.getElementById('locationInput').value;
             const btn = document.getElementById('checkInBtn');
-
             if (!locationStr) return; 
 
-            btn.disabled = true;
-            btn.innerText = "資料驗證與傳輸中...";
-            logMsg("啟動定位模組 (系統將請求您的 GPS 權限)...");
+            btn.disabled = true; btn.innerText = "資料驗證與傳輸中...";
+            logMsg("啟動定位模組...");
 
             navigator.geolocation.getCurrentPosition(
                 (position) => {
                     const lat = position.coords.latitude.toFixed(6);
                     const lng = position.coords.longitude.toFixed(6);
-                    const accuracy = parseFloat(position.coords.accuracy.toFixed(1));
-                    
-                    let status = "正常";
-                    if (accuracy > parseFloat(requiredAccuracy)) {
-                        status = "精度異常(弱訊號)";
-                    }
-
-                    const payload = { location: locationStr, lat: lat, lng: lng, accuracy: accuracy, status: status };
-
-                    logMsg("跨域寫入 Master Sheet 中...");
+                    const payload = { 
+                        action: "check_in", // 告訴 GAS 這是打卡動作
+                        location: locationStr, lat: lat, lng: lng, 
+                        accuracy: parseFloat(position.coords.accuracy.toFixed(1)), 
+                        status: "正常" 
+                    };
 
                     fetch(apiUrl, { method: 'POST', body: JSON.stringify(payload) })
                     .then(response => response.json())
@@ -244,19 +196,9 @@ https://script.google.com/macros/s/AKfycbyf-FCecsNUOWWS3repfDsg8YHEk6zhUNHoOPXwM
                             btn.disabled = false; btn.innerText = "重試打卡";
                         }
                     })
-                    .catch(error => { 
-                        logMsg(`網路傳輸錯誤：${error.message}`, "error"); 
-                        btn.disabled = false; btn.innerText = "重試打卡";
-                    });
+                    .catch(error => { logMsg(`傳輸錯誤：${error.message}`, "error"); btn.disabled = false; btn.innerText = "重試打卡"; });
                 },
-                (error) => {
-                    let errorMsg = "未知錯誤";
-                    if(error.code === error.PERMISSION_DENIED) errorMsg = "使用者拒絕提供位置授權 (請至手機設定開啟權限)";
-                    if(error.code === error.POSITION_UNAVAILABLE) errorMsg = "無法獲取位置資訊 (訊號不良)";
-                    if(error.code === error.TIMEOUT) errorMsg = "獲取位置超時";
-                    logMsg(errorMsg, "error");
-                    btn.disabled = false; btn.innerText = "重新定位與打卡";
-                },
+                (error) => { logMsg("定位失敗", "error"); btn.disabled = false; btn.innerText = "重新定位與打卡"; },
                 { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
             );
         }
