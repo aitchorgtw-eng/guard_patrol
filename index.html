@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>巡邏打卡工具 (V10 視覺化儀表板版)</title>
+    <title>巡邏打卡工具 (V11 全路線班表防呆版)</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
     <style>
         body { font-family: sans-serif; padding: 20px; background: #f4f4f9; margin: 0; }
@@ -24,18 +24,17 @@
         #qrcode-container { margin-top: 15px; display: flex; flex-direction: column; align-items: center; background: #fff; padding: 20px; border-radius: 8px; border: 1px solid #ddd;}
         #secretLock { display: block; text-align: center; margin-top: 30px; font-size: 24px; opacity: 0.15; cursor: pointer; user-select: none; }
         
-        /* 儀表板表格樣式 */
         table { width: 100%; border-collapse: collapse; margin-top: 15px; font-size: 14px; }
         th, td { border: 1px solid #ddd; padding: 8px; text-align: center; }
         th { background-color: #f5f5f5; font-weight: bold; }
-        .bg-orange { background-color: #ffe0b2 !important; color: #e65100; font-weight: bold; } /* 距離異常 */
-        .bg-red { background-color: #ffcdd2 !important; color: #c62828; font-weight: bold; }   /* 時間異常 */
-        .bg-green { background-color: #c8e6c9 !important; color: #2e7d32; }                     /* 正常 */
+        .bg-orange { background-color: #ffe0b2 !important; color: #e65100; font-weight: bold; } 
+        .bg-red { background-color: #ffcdd2 !important; color: #c62828; font-weight: bold; }   
+        .bg-green { background-color: #c8e6c9 !important; color: #2e7d32; }                     
     </style>
 </head>
 <body>
 
-    <!-- 警衛唯一可見區域 (乾淨視角) -->
+    <!-- 警衛唯一可見區域 -->
     <div class="panel highlight" id="guardPanel">
         <h3>📍 當前掃描站點</h3>
         <div id="lockWarning" class="lock-warning">⚠️ 系統鎖定：請掃描巡邏點 QR Code，禁止手動打卡。</div>
@@ -52,12 +51,11 @@
     <div id="adminPanel">
         <h2 style="color: #9c27b0; text-align: center; border-bottom: 2px solid #9c27b0; padding-bottom: 10px;">🛡️ 主管控制中心</h2>
         
-        <!-- 封裝參數面板，避免警衛修改 -->
         <div class="panel" style="background: #fff;">
             <h3>⚙️ 系統參數調校</h3>
             <div class="control-group">
-                <label>API 網址 (V10)：</label>
-                <!-- ⚠️ 請替換為您的 V10 GAS URL ⚠️ -->
+                <label>API 網址：</label>
+                <!-- 保持 V10 網址不變，因後端未改 -->
                 <input type="text" id="apiUrl" value="https://script.google.com/macros/s/AKfycbymgBcvvzq45TznnxfayEYKOEFl2zxX3E-0SDoZjl0ZuRpkROjGaSFujEbFYx3nQ-ohtw/exec" readonly style="background:#e9ecef;">
             </div>
             <div class="param-row">
@@ -67,27 +65,27 @@
             </div>
         </div>
 
-        <!-- QR Code 產生器 (新增路線 Z) -->
         <div class="panel" style="background: #fff;">
-            <h3>🖨️ 標籤產生器</h3>
+            <h3>🖨️ 標籤產生器 (字串對齊版)</h3>
             <div class="control-group">
                 <select id="genLocationSelect">
+                    <!-- 🚨 V11 修正：確保 A99 與 C02 的字串格式完全一致 🚨 -->
                     <optgroup label="路線 Z (測試線)">
-                        <option value="A99 >> 測試站點一">A99 >> 測試站點一</option>
+                        <option value="A99 >> 資訊室">A99 >> 資訊室</option>
                         <option value="C02 >> 03F 茶水間">C02 >> 03F 茶水間</option>
                     </optgroup>
-                    <!-- 保留 ABCD 歷史結構，簡化顯示空間 -->
-                    <optgroup label="路線 A"><option value="A01 >> 13F 恩典前頂樓">A01 >> 13F 恩典前頂樓</option><option value="A04 >> 09F 護理站">A04 >> 09F 護理站</option></optgroup>
+                    <optgroup label="路線 A：恩典盼望線 (22:30~23:30)"><option value="A01 >> 13F 恩典前頂樓">A01 >> 13F 恩典前頂樓</option><option value="A04 >> 09F 護理站">A04 >> 09F 護理站</option></optgroup>
+                    <optgroup label="路線 B：恩典後樓梯線 (24:00~00:30)"><option value="B01 >> 13F 恩典後頂樓">B01 >> 13F 恩典後頂樓</option></optgroup>
+                    <optgroup label="路線 D：迦南+外圍線 (19:00~20:00)"><option value="D01 >> 垃圾屋">D01 >> 垃圾屋</option></optgroup>
                 </select>
             </div>
             <button onclick="generateQRCode()" style="background: #9c27b0; padding: 10px;">產生 QR Code</button>
             <div id="qrcode-container"><div id="qrcode"></div><p id="qr-text" style="font-weight: bold;"></p></div>
         </div>
 
-        <!-- V10 核心：視覺化一週儀表板 -->
         <div class="panel" style="background: #fff;">
-            <h3>📊 巡檢狀態儀表板 (最近 200 筆)</h3>
-            <p style="font-size:12px; color:#666;">註：目前僅套用「路線 Z」的班表時間進行紅燈驗證。</p>
+            <h3>📊 全路線巡檢狀態儀表板</h3>
+            <p style="font-size:12px; color:#666;">註：已啟用 A, B, C, D, Z 完整排班防呆邏輯。</p>
             <button onclick="fetchDashboardData()" style="background: #388e3c; padding: 10px;">載入 / 更新儀表板</button>
             <div id="dashboardContainer" style="overflow-x: auto;"></div>
         </div>
@@ -116,7 +114,6 @@
             }
         });
 
-        // 觸發主管解鎖
         function verifyAdminPin() {
             const pin = prompt("請輸入主管密碼：");
             if (!pin) return;
@@ -144,7 +141,6 @@
             document.getElementById('qr-text').innerText = loc;
         }
 
-        // 打卡模組 (傳入 distanceTol)
         function executeCheckIn() {
             const apiUrl = document.getElementById('apiUrl').value.trim();
             const locationStr = document.getElementById('locationInput').value;
@@ -174,7 +170,7 @@
             );
         }
 
-        // ================= V10 核心：儀表板視覺化渲染 =================
+        // ================= V11 核心：全路線時間檢核引擎 =================
         function fetchDashboardData() {
             const apiUrl = document.getElementById('apiUrl').value.trim();
             logMsg("載入儀表板資料中...");
@@ -190,30 +186,41 @@
         }
 
         function renderDashboard(rawData) {
-            if (rawData.length <= 1) return; // 只有標題行
+            if (rawData.length <= 1) return; 
             const timeTol = parseInt(document.getElementById('timeBuffer').value);
             
             let html = `<table><tr><th>打卡時間</th><th>站點</th><th>距離判定</th><th>時間判定</th></tr>`;
             
-            // 反轉陣列，最新的資料在最上面
             for (let i = rawData.length - 1; i > 0; i--) {
                 const row = rawData[i];
                 if (!row[0]) continue;
                 
-                const logTimeStr = row[0]; // 原始字串如 "2026/9/30 上午 10:15:00"
+                const logTimeStr = row[0]; 
                 const location = row[1];
                 const distMsg = row[7] || ""; 
                 
                 let rowClass = "bg-green";
                 let timeStatus = "🟢 正常";
 
-                // 1. 判定距離異常 (橘色優先)
-                if (distMsg.includes("距離異常")) {
+                // 1. 優先檢查距離異常 (造假比遲到嚴重)
+                if (distMsg.includes("距離異常") || distMsg.includes("無基準資料")) {
                     rowClass = "bg-orange";
                 } 
-                // 2. 判定時間異常 (測試路線 Z: A99, C02)
-                else if (location.includes("A99") || location.includes("C02")) {
-                    // 擷取時與分進行比對 (使用 Regex 確保相容性)
+
+                // 2. 解析排班時間矩陣
+                let expectedRanges = [];
+                if (location.startsWith("A99")) {
+                    expectedRanges = [{start: 600, end: 630}, {start: 810, end: 840}]; // 10:00~10:30, 13:30~14:00
+                } else if (location.startsWith("A") || location.startsWith("C")) {
+                    expectedRanges = [{start: 1350, end: 1410}]; // 22:30~23:30
+                } else if (location.startsWith("D")) {
+                    expectedRanges = [{start: 1140, end: 1200}]; // 19:00~20:00
+                } else if (location.startsWith("B")) {
+                    expectedRanges = [{start: 0, end: 30}]; // 24:00(00:00) ~ 00:30 (跨日陷阱點)
+                }
+
+                // 3. 執行時間邏輯比對
+                if (expectedRanges.length > 0) {
                     const timeMatch = logTimeStr.match(/(\d{1,2}):(\d{2}):\d{2}/);
                     const isPM = logTimeStr.includes("下午");
                     
@@ -222,28 +229,31 @@
                         const mins = parseInt(timeMatch[2]);
                         if (isPM && hours !== 12) hours += 12;
                         if (!isPM && hours === 12) hours = 0;
-                        
                         const totalMins = hours * 60 + mins;
-                        // 早班: 10:00(600) ~ 10:30(630)
-                        const morningValid = (totalMins >= 600 - timeTol && totalMins <= 630 + timeTol);
-                        // 午班: 13:30(810) ~ 14:00(840)
-                        const afternoonValid = (totalMins >= 810 - timeTol && totalMins <= 840 + timeTol);
                         
-                        if (!morningValid && !afternoonValid) {
-                            rowClass = "bg-red";
+                        let timeValid = false;
+                        for (let range of expectedRanges) {
+                            let validStart = range.start - timeTol;
+                            let validEnd = range.end + timeTol;
+                            
+                            // 模除轉化：處理 B 線跨日退回前一天 (如 23:50) 的負數邊界問題
+                            if (validStart < 0) {
+                                if (totalMins >= (1440 + validStart) || totalMins <= validEnd) timeValid = true;
+                            } else {
+                                if (totalMins >= validStart && totalMins <= validEnd) timeValid = true;
+                            }
+                        }
+                        
+                        if (!timeValid) {
+                            rowClass = rowClass === "bg-orange" ? "bg-orange" : "bg-red"; // 若已是橘色則保留橘色
                             timeStatus = "🔴 異常 (非排班時間)";
                         }
                     }
                 } else {
-                    timeStatus = "⚪ 尚無排班資料"; // ABCD 線日後擴充
+                    timeStatus = "⚪ 未知路線"; 
                 }
 
-                html += `<tr class="${rowClass}">
-                            <td>${logTimeStr}</td>
-                            <td>${location}</td>
-                            <td>${distMsg}</td>
-                            <td>${timeStatus}</td>
-                         </tr>`;
+                html += `<tr class="${rowClass}"><td>${logTimeStr}</td><td>${location}</td><td>${distMsg}</td><td>${timeStatus}</td></tr>`;
             }
             html += `</table>`;
             document.getElementById('dashboardContainer').innerHTML = html;
