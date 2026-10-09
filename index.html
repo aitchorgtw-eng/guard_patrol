@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>巡邏打卡工具 (V21 穩定防呆版)</title>
+    <title>巡邏打卡工具 (V22 終極防彈版)</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
     <script src="https://unpkg.com/html5-qrcode"></script>
     <style>
@@ -39,7 +39,6 @@
 </head>
 <body>
 
-    <!-- 密碼輸入對話框 -->
     <div id="pwdModal">
         <div class="modal-content">
             <h3 style="margin-top:0; color:#9c27b0;">🛡️ 系統解鎖</h3>
@@ -52,7 +51,6 @@
         </div>
     </div>
 
-    <!-- 警衛面板 -->
     <div class="panel highlight" id="guardPanel">
         <h3>📍 當前掃描站點</h3>
         <div id="reader"></div>
@@ -80,10 +78,11 @@
     <div class="log" id="consoleLog">系統初始化... 等待操作...</div>
     <span id="secretLock" onclick="openPwdModal()">🔏</span>
 
-    <!-- 主管面板 -->
     <div id="adminPanel">
         <h2 style="color: #9c27b0; text-align: center; border-bottom: 2px solid #9c27b0; padding-bottom: 10px;">🛡️ 主管控制中心 (零信任架構)</h2>
-        <input type="hidden" id="apiUrl" value="https://script.google.com/macros/s/AKfycbyw1r783UnimiXBzNOMmfD2oxY1Ujj8FkkESmwyrvv8wUpuaRYf0i9sFOMTyWYbkBix1g/exec">
+        
+        <!-- ⚠️ 請確認這是您 V22 重新發佈後的最新 GAS URL ⚠️ -->
+        <input type="hidden" id="apiUrl" value="https://script.google.com/macros/s/AKfycbyttTYXyGVXvCEekE2Nca1c9KFvN92vlKwzGnleLngc6OrqDv0p0UZn_XmeWtkwwjtXrQ/exec">
         
         <div style="background: #e1bee7; padding: 10px; border-radius: 4px; color: #6a1b9a; font-size: 12px; margin-bottom: 15px; text-align: center;">
             ℹ️ 系統容忍參數已與 Google Sheet (主管專用) 連動，前端不再提供修改。
@@ -126,8 +125,9 @@
         let cloudParams = { timeTol: 10, distTol: 10, gpsAcc: 12 }; 
         let html5QrcodeScanner = null;
 
-        function normalizeLoc(loc) {
-            return loc ? loc.toString().replace(/\s+/g, '') : "";
+        // 🚨 V22 終極防彈清洗：只留下中英數字 🚨
+        function superNormalizeLoc(loc) {
+            return loc ? loc.toString().replace(/[^a-zA-Z0-9\u4e00-\u9fa5]/g, '') : "";
         }
 
         function logMsg(msg, type = 'info') {
@@ -304,7 +304,7 @@
                     baseCoordsDict = {}; 
                     if (result.baseCoords) {
                         for (let key in result.baseCoords) {
-                            baseCoordsDict[normalizeLoc(key)] = result.baseCoords[key];
+                            baseCoordsDict[superNormalizeLoc(key)] = result.baseCoords[key];
                         }
                     }
                     
@@ -323,7 +323,7 @@
                                     const mm = (mins % 60).toString().padStart(2, '0');
                                     dynamicSchedules[route].push({ 
                                         loc: displayLoc, 
-                                        normLoc: normalizeLoc(displayLoc), 
+                                        normLoc: superNormalizeLoc(displayLoc), 
                                         time: `${hh}:${mm}`, 
                                         mins: mins 
                                     });
@@ -384,7 +384,7 @@
                         const logDate = parseSheetDate(row[0]);
                         if (!logDate) continue;
                         
-                        const normLogRowLoc = normalizeLoc(row[1]);
+                        const normLogRowLoc = superNormalizeLoc(row[1]);
 
                         if (logDate.getFullYear() === targetDate.getFullYear() &&
                             logDate.getMonth() === targetDate.getMonth() &&
@@ -393,8 +393,12 @@
                             
                             const logMins = logDate.getHours() * 60 + logDate.getMinutes();
                             if (isTimeWithinTolerance(logMins, slot.mins, timeTol)) {
+                                // 🚨 V22：徹底修復冒號顯示問題，使用 Date 物件萃取時間 🚨
+                                const finalH = logDate.getHours().toString().padStart(2, '0');
+                                const finalM = logDate.getMinutes().toString().padStart(2, '0');
+                                
                                 matchedLog = { 
-                                    time: row[0].split(' ')[2] || row[0].split(' ')[1],
+                                    time: `${finalH}:${finalM}`,
                                     actualLat: row[2], 
                                     actualLng: row[3], 
                                     actualAcc: row[4],
@@ -442,7 +446,7 @@
                             rowClass = "bg-green";
                             displayStatus = `🟢 正常打卡`;
                         }
-                        displayTime = matchedLog.time.substring(0,5); 
+                        displayTime = matchedLog.time; 
                     } else {
                         if (isFuture) {
                             rowClass = "bg-gray";
