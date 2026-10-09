@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>巡邏打卡工具 (V17 零信任防竄改版)</title>
+    <title>巡邏打卡工具 (V18 雲端參數版)</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
     <script src="https://unpkg.com/html5-qrcode"></script>
     <style>
@@ -11,9 +11,7 @@
         .panel { background: #fff; padding: 15px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); margin-bottom: 20px; }
         .control-group { margin-bottom: 10px; display: flex; flex-direction: column; }
         label { font-weight: bold; font-size: 14px; margin-bottom: 5px; }
-        input[type="number"], input[type="text"], select { padding: 8px; font-size: 14px; width: 100%; box-sizing: border-box; }
-        .param-row { display: flex; gap: 10px; }
-        .param-row .control-group { flex: 1; }
+        input[type="number"], input[type="text"], input[type="password"], select { padding: 8px; font-size: 14px; width: 100%; box-sizing: border-box; }
         button { padding: 10px 15px; background: #4a90e2; color: #fff; border: none; border-radius: 4px; font-size: 16px; cursor: pointer; font-weight: bold;}
         button:active { background: #357abd; }
         button:disabled { background: #ccc; cursor: not-allowed; }
@@ -35,9 +33,27 @@
         .nav-controls { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; background: #e3f2fd; padding: 10px; border-radius: 4px;}
         .route-selector { background: #fff3e0; border: 1px solid #ffb74d; color: #e65100; font-weight: bold; }
         #reader { width: 100%; max-width: 400px; margin: 0 auto 15px auto; border-radius: 8px; overflow: hidden; display: none; border: 3px solid #ffb74d; }
+
+        /* 🚨 V18 自製星號密碼對話框 🚨 */
+        #pwdModal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); z-index: 9999; justify-content: center; align-items: center; }
+        .modal-content { background: #fff; padding: 25px; border-radius: 8px; width: 80%; max-width: 300px; text-align: center; box-shadow: 0 4px 10px rgba(0,0,0,0.3); }
+        .modal-buttons { display: flex; gap: 10px; margin-top: 15px; }
     </style>
 </head>
 <body>
+
+    <!-- 🚨 密碼輸入對話框 🚨 -->
+    <div id="pwdModal">
+        <div class="modal-content">
+            <h3 style="margin-top:0; color:#9c27b0;">🛡️ 系統解鎖</h3>
+            <p style="font-size:12px; color:#666;">請輸入主管專用密碼</p>
+            <input type="password" id="adminPwdInput" placeholder="***" style="text-align:center; font-size:24px; letter-spacing: 5px;">
+            <div class="modal-buttons">
+                <button onclick="closePwdModal()" style="flex:1; background:#ccc; color:#333;">取消</button>
+                <button onclick="submitPwd()" style="flex:1; background:#9c27b0;">確認</button>
+            </div>
+        </div>
+    </div>
 
     <div class="panel highlight" id="guardPanel">
         <h3>📍 當前掃描站點</h3>
@@ -64,24 +80,21 @@
     </div>
 
     <div class="log" id="consoleLog">系統初始化... 等待操作...</div>
-    <span id="secretLock" onclick="verifyAdminPin()">🔏</span>
+    <span id="secretLock" onclick="openPwdModal()">🔏</span>
 
     <div id="adminPanel">
-        <h2 style="color: #9c27b0; text-align: center; border-bottom: 2px solid #9c27b0; padding-bottom: 10px;">🛡️ 主管控制中心 (零信任架構)</h2>
+        <h2 style="color: #9c27b0; text-align: center; border-bottom: 2px solid #9c27b0; padding-bottom: 10px;">🛡️ 主管控制中心 (雲端參數連動)</h2>
         
-        <input type="hidden" id="apiUrl" value="https://script.google.com/macros/s/AKfycbx7DvphyqD1tAzo0FMXd2LvbfdOVU94SXeq7iXkZMBuZgDTH8KI-DB10BB90WQiHv004A/exec">
+        <!-- API 網址保留供技術人員使用，但不顯示標籤干擾 -->
+        <input type="hidden" id="apiUrl" value="https://script.google.com/macros/s/AKfycbyw1r783UnimiXBzNOMmfD2oxY1Ujj8FkkESmwyrvv8wUpuaRYf0i9sFOMTyWYbkBix1g/exec">
         
-        <div class="panel" style="background: #fff;">
-            <h3>⚙️ 系統參數調校</h3>
-            <div class="param-row">
-                <div class="control-group"><label>時間容忍(分)：</label><input type="number" id="timeBuffer" value="10"></div>
-                <div class="control-group"><label>GPS精度(公尺)：</label><input type="number" id="gpsAccuracy" value="12"></div>
-                <div class="control-group"><label>距離容忍(公尺)：</label><input type="number" id="distanceTol" value="10" style="background:#ffe0b2; color:#e65100; font-weight:bold;"></div>
-            </div>
+        <!-- 🚨 V18 已徹底拔除面板，參數由試算表派發 🚨 -->
+        <div style="background: #e1bee7; padding: 10px; border-radius: 4px; color: #6a1b9a; font-size: 12px; margin-bottom: 15px; text-align: center;">
+            ℹ️ 系統容忍參數已與 Google Sheet (主管專用) 連動，前端不再提供修改。
         </div>
 
         <div class="panel" style="background: #fff;">
-            <h3>📊 全路線狀態儀表板 (即時二次防偽驗證)</h3>
+            <h3>📊 全路線狀態儀表板</h3>
             <div class="nav-controls">
                 <button onclick="changeWeekOffset(-1)">◀ 上一週</button>
                 <span id="weekDisplayLabel" style="font-weight:bold; color:#1565c0;">本週</span>
@@ -95,7 +108,7 @@
                     <option value="路線E">路線 E</option><option value="路線Z" selected>路線 Z (測試線)</option>
                 </select>
             </div>
-            <button onclick="fetchDataAndRender(false)" style="background: #388e3c; padding: 10px; width: 100%;">重新從資料庫載入與驗證</button>
+            <button onclick="fetchDataAndRender(false)" style="background: #388e3c; padding: 10px; width: 100%;">同步雲端資料庫</button>
             <div id="adminDashboardContainer" style="overflow-x: auto; margin-top: 15px;"></div>
         </div>
 
@@ -113,7 +126,8 @@
         let currentWeekOffset = 0; 
         let cachedLogs = []; 
         let dynamicSchedules = {}; 
-        let baseCoordsDict = {}; // 🚨 V17 儲存基準點供防竄改驗證使用 🚨
+        let baseCoordsDict = {}; 
+        let cloudParams = { timeTol: 10, distTol: 10 }; // 🚨 儲存來自資料庫的參數
         let html5QrcodeScanner = null;
 
         function logMsg(msg, type = 'info') {
@@ -150,15 +164,11 @@
                         if (extractedLoc) {
                             processScannedLocation(decodeURIComponent(extractedLoc));
                         } else {
-                            logMsg("找不到地點參數。", "error");
-                            alert("無效的 QR Code");
+                            logMsg("找不到地點參數。", "error"); alert("無效的 QR Code");
                             document.getElementById('startScanBtn').style.display = 'block'; 
                         }
-                    } catch (e) {
-                        document.getElementById('startScanBtn').style.display = 'block';
-                    }
-                },
-                (errorMessage) => { }
+                    } catch (e) { document.getElementById('startScanBtn').style.display = 'block'; }
+                }, (errorMessage) => { }
             );
         }
 
@@ -170,11 +180,24 @@
             fetchDataAndRender(true);
         }
 
-        function verifyAdminPin() {
-            const pin = prompt("請輸入主管密碼：");
+        // 🚨 V18 密碼對話框控制 🚨
+        function openPwdModal() {
+            document.getElementById('pwdModal').style.display = 'flex';
+            document.getElementById('adminPwdInput').value = '';
+            document.getElementById('adminPwdInput').focus();
+        }
+        function closePwdModal() {
+            document.getElementById('pwdModal').style.display = 'none';
+        }
+
+        function submitPwd() {
+            const pin = document.getElementById('adminPwdInput').value;
             if (!pin) return;
+            closePwdModal();
+            
             const apiUrl = document.getElementById('apiUrl').value.trim();
             logMsg("連線驗證權限...");
+
             fetch(apiUrl, { method: 'POST', body: JSON.stringify({ action: "verify_pin", pin: pin }) })
             .then(res => { if (!res.ok) throw new Error(`HTTP ${res.status}`); return res.json(); })
             .then(result => {
@@ -203,18 +226,18 @@
             const apiUrl = document.getElementById('apiUrl').value.trim();
             const locationStr = document.getElementById('locationInput').value;
             const btn = document.getElementById('checkInBtn');
-            const distTol = document.getElementById('distanceTol').value;
+            // 🚨 V18：不再從前端抓取 distanceTol 送出，全權交給後端處理
             if (!locationStr) return; 
 
             btn.disabled = true; btn.innerText = "傳輸中...";
             navigator.geolocation.getCurrentPosition(
                 (pos) => {
-                    const payload = { action: "check_in", location: locationStr, lat: pos.coords.latitude.toFixed(6), lng: pos.coords.longitude.toFixed(6), accuracy: parseFloat(pos.coords.accuracy.toFixed(1)), distanceTol: distTol, status: "正常" };
+                    const payload = { action: "check_in", location: locationStr, lat: pos.coords.latitude.toFixed(6), lng: pos.coords.longitude.toFixed(6), accuracy: parseFloat(pos.coords.accuracy.toFixed(1)) };
                     fetch(apiUrl, { method: 'POST', body: JSON.stringify(payload) })
                     .then(res => res.json())
                     .then(result => {
                         if (result.result === "success") {
-                            logMsg(`✅ 打卡完成！`); btn.innerText = "已完成";
+                            logMsg(`✅ 打卡完成！系統已依據雲端參數驗證完畢。`); btn.innerText = "已完成";
                             fetchDataAndRender(true); 
                         } else { btn.disabled = false; btn.innerText = "重試"; }
                     });
@@ -265,13 +288,9 @@
             return diff <= tol;
         }
 
-        // 🚨 V17 JS 版 Haversine 公式，用於前端動態重新計算 🚨
         function calculateHaversine(lat1, lon1, lat2, lon2) {
-            const R = 6371e3; 
-            const p1 = lat1 * Math.PI/180;
-            const p2 = lat2 * Math.PI/180;
-            const dp = (lat2-lat1) * Math.PI/180;
-            const dl = (lon2-lon1) * Math.PI/180;
+            const R = 6371e3; const p1 = lat1 * Math.PI/180; const p2 = lat2 * Math.PI/180;
+            const dp = (lat2-lat1) * Math.PI/180; const dl = (lon2-lon1) * Math.PI/180;
             const a = Math.sin(dp/2) * Math.sin(dp/2) + Math.cos(p1) * Math.cos(p2) * Math.sin(dl/2) * Math.sin(dl/2);
             const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
             return R * c; 
@@ -279,15 +298,18 @@
 
         function fetchDataAndRender(isGuardView) {
             const apiUrl = document.getElementById('apiUrl').value.trim();
-            logMsg("同步資料與基準座標中...");
+            logMsg("同步資料與雲端參數中...");
             fetch(apiUrl, { method: 'POST', body: JSON.stringify({ action: "get_dashboard_data" }) })
             .then(res => { if(!res.ok) throw new Error("HTTP 錯誤"); return res.json(); })
             .then(result => {
                 if(result.result === "success") {
                     cachedLogs = result.logs;
-                    baseCoordsDict = result.baseCoords || {}; // 儲存防竄改驗證字典
-                    dynamicSchedules = {}; 
+                    baseCoordsDict = result.baseCoords || {}; 
                     
+                    // 🚨 V18 寫入來自雲端資料庫的參數 🚨
+                    if(result.sysParams) cloudParams = result.sysParams;
+                    
+                    dynamicSchedules = {}; 
                     const routeNames = ["路線A", "路線B", "路線C", "路線D", "路線E", "路線Z"];
                     routeNames.forEach(route => {
                         dynamicSchedules[route] = [];
@@ -306,7 +328,7 @@
                         }
                     });
                     
-                    logMsg("✅ 零信任驗證資料集就緒。");
+                    logMsg(`✅ 雲端資料同步完成 (時間容忍: ${cloudParams.timeTol}分, 距離容忍: ${cloudParams.distTol}m)。`);
                     refreshDashboard(isGuardView);
                 }
             }).catch(e => logMsg(`載入失敗：${e.message}`, "error"));
@@ -319,8 +341,10 @@
                 return;
             }
 
-            const timeTol = parseInt(document.getElementById('timeBuffer').value);
-            const distTol = parseFloat(document.getElementById('distanceTol').value); // 取得動態距離容忍值
+            // 🚨 V18 繪圖引擎改吃雲端參數 🚨
+            const timeTol = cloudParams.timeTol;
+            const distTol = cloudParams.distTol; 
+            
             let targetDates = [];
             const today = new Date();
             today.setHours(0,0,0,0);
@@ -365,8 +389,8 @@
                             if (isTimeWithinTolerance(logMins, slot.mins, timeTol)) {
                                 matchedLog = { 
                                     time: row[0].split(' ')[2] || row[0].split(' ')[1],
-                                    actualLat: row[2], // C 欄即時數值
-                                    actualLng: row[3], // D 欄即時數值
+                                    actualLat: row[2], 
+                                    actualLng: row[3], 
                                     locName: row[1]
                                 };
                                 break; 
@@ -375,7 +399,6 @@
                     }
 
                     if (matchedLog) {
-                        // 🚨 V17：放棄讀取 H 欄，強制進行前端動態二次計算 🚨
                         let isDistAnomaly = false;
                         let finalDistMsg = "無基準資料或座標遺失";
 
@@ -395,7 +418,7 @@
                                 }
                             }
                         } else {
-                            isDistAnomaly = true; // 查無對應基準點視同異常
+                            isDistAnomaly = true; 
                         }
 
                         if (isDistAnomaly) {
