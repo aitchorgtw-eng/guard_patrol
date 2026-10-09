@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>巡邏打卡工具 (V22 終極防彈版)</title>
+    <title>巡邏打卡工具 (V23 倒序渲染版)</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
     <script src="https://unpkg.com/html5-qrcode"></script>
     <style>
@@ -79,17 +79,16 @@
     <span id="secretLock" onclick="openPwdModal()">🔏</span>
 
     <div id="adminPanel">
-        <h2 style="color: #9c27b0; text-align: center; border-bottom: 2px solid #9c27b0; padding-bottom: 10px;">🛡️ 主管控制中心 (零信任架構)</h2>
+        <h2 style="color: #9c27b0; text-align: center; border-bottom: 2px solid #9c27b0; padding-bottom: 10px;">🛡️ 主管控制中心 (一體化資料庫版)</h2>
         
-        <!-- ⚠️ 請確認這是您 V22 重新發佈後的最新 GAS URL ⚠️ -->
-        <input type="hidden" id="apiUrl" value="https://script.google.com/macros/s/AKfycbyttTYXyGVXvCEekE2Nca1c9KFvN92vlKwzGnleLngc6OrqDv0p0UZn_XmeWtkwwjtXrQ/exec">
+        <input type="hidden" id="apiUrl" value="https://script.google.com/macros/s/AKfycbzqdn7B5UoVA9NBbZk9ibmSaaCRgY68HZhJA4-3NtiTAEV3vYDFMq2t24DWXcfHRYwRbg/exec">
         
         <div style="background: #e1bee7; padding: 10px; border-radius: 4px; color: #6a1b9a; font-size: 12px; margin-bottom: 15px; text-align: center;">
-            ℹ️ 系統容忍參數已與 Google Sheet (主管專用) 連動，前端不再提供修改。
+            ℹ️ 系統已自動從各路線頁籤讀取基準座標，免除維護 `站點基準表_Base` 的負擔。
         </div>
 
         <div class="panel" style="background: #fff;">
-            <h3>📊 全路線狀態儀表板 (即時二次防偽驗證)</h3>
+            <h3>📊 全路線狀態儀表板 (倒序排列)</h3>
             <div class="nav-controls">
                 <button onclick="changeWeekOffset(-1)">◀ 上一週</button>
                 <span id="weekDisplayLabel" style="font-weight:bold; color:#1565c0;">本週</span>
@@ -110,7 +109,7 @@
         <div class="panel" style="background: #fff;">
             <h3>🖨️ 標籤產生器</h3>
             <div class="control-group">
-                <input type="text" id="genLocationInput" placeholder="請精確輸入站點名稱 (例: A99 >> 資訊室)">
+                <input type="text" id="genLocationInput" placeholder="請精確輸入站點名稱 (例: 資訊室)">
             </div>
             <button onclick="generateQRCode()" class="btn-full" style="background: #9c27b0;">產生 QR Code</button>
             <div id="qrcode-container"><div id="qrcode"></div><p id="qr-text" style="font-weight: bold;"></p></div>
@@ -125,7 +124,6 @@
         let cloudParams = { timeTol: 10, distTol: 10, gpsAcc: 12 }; 
         let html5QrcodeScanner = null;
 
-        // 🚨 V22 終極防彈清洗：只留下中英數字 🚨
         function superNormalizeLoc(loc) {
             return loc ? loc.toString().replace(/[^a-zA-Z0-9\u4e00-\u9fa5]/g, '') : "";
         }
@@ -232,7 +230,7 @@
                     .then(res => res.json())
                     .then(result => {
                         if (result.result === "success") {
-                            logMsg(`✅ 打卡完成！系統已依據雲端參數驗證完畢。`); btn.innerText = "已完成";
+                            logMsg(`✅ 打卡完成！`); btn.innerText = "已完成";
                             fetchDataAndRender(true); 
                         } else { btn.disabled = false; btn.innerText = "重試"; }
                     });
@@ -299,14 +297,8 @@
             .then(result => {
                 if(result.result === "success") {
                     cachedLogs = result.logs;
+                    baseCoordsDict = result.baseCoords || {}; 
                     if(result.sysParams) cloudParams = result.sysParams;
-                    
-                    baseCoordsDict = {}; 
-                    if (result.baseCoords) {
-                        for (let key in result.baseCoords) {
-                            baseCoordsDict[superNormalizeLoc(key)] = result.baseCoords[key];
-                        }
-                    }
                     
                     dynamicSchedules = {}; 
                     const routeNames = ["路線A", "路線B", "路線C", "路線D", "路線E", "路線Z"];
@@ -332,7 +324,7 @@
                         }
                     });
                     
-                    logMsg(`✅ 雲端同步完成 (時間容忍: ${cloudParams.timeTol}分, 距離容忍: ${cloudParams.distTol}m, 精度: ${cloudParams.gpsAcc}m)。`);
+                    logMsg(`✅ 資料同步完成。`);
                     refreshDashboard(isGuardView);
                 }
             }).catch(e => logMsg(`載入失敗：${e.message}`, "error"));
@@ -366,6 +358,9 @@
                 }
             }
 
+            // 🚨 V23 核心：實作班表的降冪排序 (由晚到早) 🚨
+            let sortedScheduleConfig = [...scheduleConfig].sort((a, b) => b.mins - a.mins);
+
             let html = `<table><tr><th>日期</th><th>預定</th><th>站點</th><th>動態防偽驗證狀態</th></tr>`;
             
             for (let i = targetDates.length - 1; i >= 0; i--) {
@@ -373,7 +368,7 @@
                 const dateString = `${targetDate.getMonth()+1}/${targetDate.getDate()}`;
                 const isFuture = targetDate > today;
 
-                scheduleConfig.forEach(slot => {
+                sortedScheduleConfig.forEach(slot => {
                     let rowClass = "";
                     let displayTime = "--:--";
                     let displayStatus = "";
@@ -393,7 +388,6 @@
                             
                             const logMins = logDate.getHours() * 60 + logDate.getMinutes();
                             if (isTimeWithinTolerance(logMins, slot.mins, timeTol)) {
-                                // 🚨 V22：徹底修復冒號顯示問題，使用 Date 物件萃取時間 🚨
                                 const finalH = logDate.getHours().toString().padStart(2, '0');
                                 const finalM = logDate.getMinutes().toString().padStart(2, '0');
                                 
