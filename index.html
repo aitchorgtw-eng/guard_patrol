@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>巡邏打卡工具 (V13 雙視角排班版)</title>
+    <title>巡邏打卡工具 (V15 全路線動態版)</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
     <style>
         body { font-family: sans-serif; padding: 20px; background: #f4f4f9; margin: 0; }
@@ -32,22 +32,31 @@
         .bg-green { background-color: #c8e6c9 !important; color: #2e7d32; }                     
         .bg-gray { background-color: #f5f5f5 !important; color: #9e9e9e; font-style: italic; }
         .nav-controls { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; background: #e3f2fd; padding: 10px; border-radius: 4px;}
+        .route-selector { background: #fff3e0; border: 1px solid #ffb74d; color: #e65100; font-weight: bold; }
     </style>
 </head>
 <body>
 
-    <!-- 警衛唯一可見區域 (含今日狀態) -->
+    <!-- ================= 警衛專屬視角 ================= -->
     <div class="panel highlight" id="guardPanel">
         <h3>📍 當前掃描站點</h3>
-        <div id="lockWarning" class="lock-warning">⚠️ 系統鎖定：請掃描巡邏點 QR Code，禁止手動打卡。</div>
+        <div id="lockWarning" class="lock-warning">⚠️ 系統鎖定：請掃描巡邏點 QR Code。</div>
         <div class="control-group">
             <input type="text" id="locationInput" value="" placeholder="等待 QR Code..." readonly style="background:#fff3e0; font-size: 16px; font-weight: bold; color: #e65100; text-align: center;">
         </div>
         <button id="checkInBtn" class="btn-full" onclick="executeCheckIn()" disabled>送出定位與打卡紀錄</button>
         
-        <!-- 警衛專用：今日動態 -->
+        <!-- 獨立的警衛今日儀表板 -->
         <div style="margin-top: 20px; border-top: 1px dashed #ccc; padding-top: 15px;">
-            <h4 style="margin:0 0 10px 0;">📋 今日巡檢動態 (路線 Z)</h4>
+            <h4 style="margin:0 0 10px 0;">📋 今日個人巡檢動態</h4>
+            <div class="control-group">
+                <label>請選擇您目前負責的路線：</label>
+                <select id="guardRouteSelect" class="route-selector" onchange="refreshDashboard(true)">
+                    <option value="路線A">路線 A</option><option value="路線B">路線 B</option>
+                    <option value="路線C">路線 C</option><option value="路線D">路線 D</option>
+                    <option value="路線E">路線 E</option><option value="路線Z" selected>路線 Z (測試線)</option>
+                </select>
+            </div>
             <div id="guardDashboardContainer">系統載入中...</div>
         </div>
     </div>
@@ -55,57 +64,55 @@
     <div class="log" id="consoleLog">系統初始化... 等待操作...</div>
     <span id="secretLock" onclick="verifyAdminPin()">🔏</span>
 
-    <!-- ================= 主管解鎖區域 ================= -->
+    <!-- ================= 主管解鎖視角 ================= -->
     <div id="adminPanel">
         <h2 style="color: #9c27b0; text-align: center; border-bottom: 2px solid #9c27b0; padding-bottom: 10px;">🛡️ 主管控制中心</h2>
         
+        <!-- 隱藏但保留作用的參數暫存區 -->
+        <input type="hidden" id="apiUrl" value="https://script.google.com/macros/s/AKfycbzBvordqfr8fW7bDW6ns4WllI30mJg0Ox6fRBL1YNhULAeegMfGG0lOoPoK5qKvrTRx/exec">
+        
         <div class="panel" style="background: #fff;">
             <h3>⚙️ 系統參數調校</h3>
-            <div class="control-group">
-                <label>API 網址 (V13)：</label>
-                <!-- ⚠️ 請替換為您的 V13 GAS URL ⚠️ -->
-                <input type="text" id="apiUrl" value="https://script.google.com/macros/s/AKfycbwStaiG6R_eDFP6_4bwEFPPmQ1cUiG1viH3D0NAN1KI6WpmgSEzGrwQ9WZWGzb6JOLWHg/exec" readonly style="background:#e9ecef;">
-            </div>
             <div class="param-row">
-                <div class="control-group"><label>時間容忍 (分)：</label><input type="number" id="timeBuffer" value="10"></div>
-                <div class="control-group"><label>GPS精度 (公尺)：</label><input type="number" id="gpsAccuracy" value="12"></div>
-                <div class="control-group"><label>距離異常 (公尺)：</label><input type="number" id="distanceTol" value="10" style="background:#ffe0b2; color:#e65100; font-weight:bold;"></div>
+                <div class="control-group"><label>時間容忍(分)：</label><input type="number" id="timeBuffer" value="10"></div>
+                <div class="control-group"><label>GPS精度(公尺)：</label><input type="number" id="gpsAccuracy" value="12"></div>
+                <div class="control-group"><label>距離容忍(公尺)：</label><input type="number" id="distanceTol" value="10" style="background:#ffe0b2; color:#e65100; font-weight:bold;"></div>
             </div>
         </div>
 
         <div class="panel" style="background: #fff;">
-            <h3>🖨️ 標籤產生器</h3>
-            <div class="control-group">
-                <select id="genLocationSelect">
-                    <optgroup label="路線 Z (測試線)"><option value="A99 >> 資訊室">A99 >> 資訊室</option><option value="C02 >> 03F 茶水間">C02 >> 03F 茶水間</option></optgroup>
-                    <optgroup label="路線 A"><option value="A01 >> 13F 恩典前頂樓">A01 >> 13F 恩典前頂樓</option></optgroup>
-                </select>
-            </div>
-            <button onclick="generateQRCode()" class="btn-full" style="background: #9c27b0;">產生 QR Code</button>
-            <div id="qrcode-container"><div id="qrcode"></div><p id="qr-text" style="font-weight: bold;"></p></div>
-        </div>
-
-        <!-- 主管專用：一週儀表板 -->
-        <div class="panel" style="background: #fff;">
-            <h3>📊 巡檢狀態儀表板 (支援缺漏偵測)</h3>
+            <h3>📊 全路線狀態儀表板 (動態排班引擎)</h3>
             <div class="nav-controls">
                 <button onclick="changeWeekOffset(-1)">◀ 上一週</button>
                 <span id="weekDisplayLabel" style="font-weight:bold; color:#1565c0;">本週</span>
                 <button onclick="changeWeekOffset(1)">下一週 ▶</button>
             </div>
             <div class="control-group">
-                <label>選擇檢視路線：</label>
-                <select id="dashboardRouteSelect" onchange="refreshDashboard()">
-                    <option value="Z">路線 Z (A99, C02)</option>
+                <label>選擇要稽核的路線：</label>
+                <select id="adminRouteSelect" class="route-selector" onchange="refreshDashboard(false)">
+                    <option value="路線A">路線 A</option><option value="路線B">路線 B</option>
+                    <option value="路線C">路線 C</option><option value="路線D">路線 D</option>
+                    <option value="路線E">路線 E</option><option value="路線Z" selected>路線 Z (測試線)</option>
                 </select>
             </div>
-            <div id="adminDashboardContainer" style="overflow-x: auto;"></div>
+            <button onclick="fetchDataAndRender(false)" style="background: #388e3c; padding: 10px; width: 100%;">重新從資料庫載入</button>
+            <div id="adminDashboardContainer" style="overflow-x: auto; margin-top: 15px;"></div>
+        </div>
+
+        <div class="panel" style="background: #fff;">
+            <h3>🖨️ 標籤產生器</h3>
+            <div class="control-group">
+                <input type="text" id="genLocationInput" placeholder="請精確輸入站點名稱 (例: A99 >> 資訊室)">
+            </div>
+            <button onclick="generateQRCode()" class="btn-full" style="background: #9c27b0;">產生 QR Code</button>
+            <div id="qrcode-container"><div id="qrcode"></div><p id="qr-text" style="font-weight: bold;"></p></div>
         </div>
     </div>
 
     <script>
-        let currentWeekOffset = 0; // 0=本週, -1=上週
-        let cachedLogs = []; // 快取資料庫回傳結果，減少網路請求
+        let currentWeekOffset = 0; 
+        let cachedLogs = []; 
+        let dynamicSchedules = {}; // 儲存所有路線的字典結構: {"路線A": [...], "路線Z": [...]}
 
         function logMsg(msg, type = 'info') {
             const logBox = document.getElementById('consoleLog');
@@ -121,8 +128,7 @@
             if (locParam) {
                 document.getElementById('locationInput').value = decodeURIComponent(locParam);
                 document.getElementById('checkInBtn').disabled = false;
-                logMsg(`✅ QR Code 辨識成功，解鎖打卡。`);
-                // 警衛模式：啟動時自動抓取今日資料
+                logMsg(`✅ QR Code 辨識成功。`);
                 fetchDataAndRender(true);
             } else {
                 document.getElementById('lockWarning').style.display = 'block';
@@ -133,7 +139,7 @@
             const pin = prompt("請輸入主管密碼：");
             if (!pin) return;
             const apiUrl = document.getElementById('apiUrl').value.trim();
-            logMsg("連線至資料庫驗證權限中...");
+            logMsg("連線驗證權限...");
 
             fetch(apiUrl, { method: 'POST', body: JSON.stringify({ action: "verify_pin", pin: pin }) })
             .then(res => { if (!res.ok) throw new Error(`HTTP ${res.status}`); return res.json(); })
@@ -143,14 +149,14 @@
                     document.getElementById('adminPanel').style.display = 'block';
                     document.getElementById('guardPanel').style.display = 'none';
                     document.getElementById('secretLock').style.display = 'none';
-                    // 主管模式：啟動時自動抓取本週資料
                     fetchDataAndRender(false);
                 } else { alert("密碼錯誤"); }
-            }).catch(e => logMsg(`連線失敗 (請確認 GAS 已發佈新版)：${e.message}`, "error"));
+            }).catch(e => logMsg(`連線失敗：${e.message}`, "error"));
         }
 
         function generateQRCode() {
-            const loc = document.getElementById('genLocationSelect').value;
+            const loc = document.getElementById('genLocationInput').value.trim();
+            if(!loc) return alert("請輸入站點名稱");
             const targetUrl = `${window.location.origin}${window.location.pathname}?loc=${encodeURIComponent(loc)}`;
             const container = document.getElementById('qrcode');
             container.innerHTML = '';
@@ -174,7 +180,7 @@
                     .then(result => {
                         if (result.result === "success") {
                             logMsg(`✅ 打卡完成！`); btn.innerText = "已完成";
-                            fetchDataAndRender(true); // 打卡完自動刷新警衛儀表板
+                            fetchDataAndRender(true); 
                         } else { btn.disabled = false; btn.innerText = "重試"; }
                     });
                 },
@@ -183,69 +189,100 @@
             );
         }
 
-        // ================= V13 排班與缺漏偵測引擎 =================
+        // ================= V15 全路線動態排班與環狀時間引擎 =================
         function changeWeekOffset(delta) {
             currentWeekOffset += delta;
             let label = currentWeekOffset === 0 ? "本週" : currentWeekOffset < 0 ? `前 ${Math.abs(currentWeekOffset)} 週` : `後 ${currentWeekOffset} 週`;
             document.getElementById('weekDisplayLabel').innerText = label;
-            refreshDashboard();
+            refreshDashboard(false);
         }
 
-        function refreshDashboard() {
-            renderScheduleMatrix(cachedLogs, false);
+        function refreshDashboard(isGuardView) {
+            const selectedRoute = isGuardView ? document.getElementById('guardRouteSelect').value : document.getElementById('adminRouteSelect').value;
+            const routeSchedule = dynamicSchedules[selectedRoute] || [];
+            renderScheduleMatrix(cachedLogs, routeSchedule, isGuardView);
+        }
+
+        function parseTimeStringToMins(timeStr) {
+            let isPM = timeStr.includes("下午") || timeStr.includes("PM");
+            let match = timeStr.match(/(\d{1,2}):(\d{2})/);
+            if(!match) return 0;
+            let h = parseInt(match[1]);
+            let m = parseInt(match[2]);
+            if (isPM && h !== 12) h += 12;
+            if (!isPM && timeStr.includes("上午") && h === 12) h = 0;
+            return h * 60 + m;
+        }
+
+        function parseSheetDate(dateStr) {
+            if (!dateStr) return null;
+            const parts = dateStr.split(' ');
+            if (parts.length < 3) return new Date(dateStr); 
+            const datePart = parts[0]; 
+            const mins = parseTimeStringToMins(dateStr);
+            const h = Math.floor(mins / 60);
+            const m = mins % 60;
+            return new Date(`${datePart} ${h}:${m}:00`);
+        }
+
+        // 🚨 數學模型：環狀時間比對，解決午夜跨日問題 🚨
+        function isTimeWithinTolerance(logMins, slotMins, tol) {
+            let diff = Math.abs(logMins - slotMins);
+            if (diff > 720) diff = 1440 - diff; // 處理 23:55 (1435) 與 00:05 (5) 的距離
+            return diff <= tol;
         }
 
         function fetchDataAndRender(isGuardView) {
             const apiUrl = document.getElementById('apiUrl').value.trim();
-            logMsg("同步資料庫中...");
-            fetch(apiUrl, { method: 'POST', body: JSON.stringify({ action: "get_logs" }) })
-            .then(res => res.json())
+            logMsg("同步打卡紀錄與全路線班表中...");
+            fetch(apiUrl, { method: 'POST', body: JSON.stringify({ action: "get_dashboard_data" }) })
+            .then(res => { if(!res.ok) throw new Error("HTTP 錯誤"); return res.json(); })
             .then(result => {
                 if(result.result === "success") {
-                    cachedLogs = result.data;
-                    renderScheduleMatrix(cachedLogs, isGuardView);
-                    logMsg("✅ 資料同步完成。");
+                    cachedLogs = result.logs;
+                    dynamicSchedules = {}; // 初始化字典
+                    
+                    // 解析後端傳來的多路線資料字典
+                    const routeNames = ["路線A", "路線B", "路線C", "路線D", "路線E", "路線Z"];
+                    routeNames.forEach(route => {
+                        dynamicSchedules[route] = [];
+                        const sData = result.schedule[route];
+                        if (sData && sData.length > 0) {
+                            for(let i=1; i<sData.length; i++) {
+                                const loc = sData[i][0]; // A欄
+                                const timeStr = sData[i][3]; // D欄
+                                if(loc && timeStr) {
+                                    const mins = parseTimeStringToMins(timeStr);
+                                    const hh = Math.floor(mins / 60).toString().padStart(2, '0');
+                                    const mm = (mins % 60).toString().padStart(2, '0');
+                                    dynamicSchedules[route].push({ loc: loc, time: `${hh}:${mm}`, mins: mins });
+                                }
+                            }
+                        }
+                    });
+                    
+                    logMsg("✅ 全路線班表同步完成。");
+                    refreshDashboard(isGuardView);
                 }
-            }).catch(e => logMsg(`載入失敗`, "error"));
+            }).catch(e => logMsg(`載入失敗：${e.message}`, "error"));
         }
 
-        // 資料清洗：將 Google Sheet "2026/10/8 上午 11:14:43" 轉為標準 Date 物件
-        function parseSheetDate(dateStr) {
-            if (!dateStr) return null;
-            const parts = dateStr.split(' ');
-            if (parts.length < 3) return new Date(dateStr); // Fallback
-            const datePart = parts[0]; 
-            const ampm = parts[1];
-            const timePart = parts[2];
-            let [h, m, s] = timePart.split(':').map(Number);
-            if (ampm === '下午' && h !== 12) h += 12;
-            if (ampm === '上午' && h === 12) h = 0;
-            return new Date(`${datePart} ${h}:${m}:${s}`);
-        }
-
-        // 核心渲染邏輯 (動態比對槽位)
-        function renderScheduleMatrix(logs, isGuardView) {
+        function renderScheduleMatrix(logs, scheduleConfig, isGuardView) {
             const container = document.getElementById(isGuardView ? 'guardDashboardContainer' : 'adminDashboardContainer');
-            const timeTol = parseInt(document.getElementById('timeBuffer').value);
-            
-            // 定義路線 Z 的固定班表 (每日應打卡的 4 個點)
-            const zSchedule = [
-                { time: "10:00", loc: "A99 >> 資訊室", mins: 600 },
-                { time: "10:00", loc: "C02 >> 03F 茶水間", mins: 600 },
-                { time: "13:30", loc: "A99 >> 資訊室", mins: 810 },
-                { time: "13:30", loc: "C02 >> 03F 茶水間", mins: 810 }
-            ];
+            if (scheduleConfig.length === 0) {
+                container.innerHTML = `<div style="padding:10px; color:#d32f2f; background:#ffebee;">此路線尚無排班資料，請至試算表建置。</div>`;
+                return;
+            }
 
-            // 決定要渲染的日期範圍
+            const timeTol = parseInt(document.getElementById('timeBuffer').value);
             let targetDates = [];
             const today = new Date();
             today.setHours(0,0,0,0);
 
             if (isGuardView) {
-                targetDates.push(new Date(today)); // 警衛只看今天
+                targetDates.push(new Date(today)); // 警衛看今天
             } else {
-                // 主管看一週 (週一至週日)
-                const dayOfWeek = today.getDay() || 7; // 1-7
+                const dayOfWeek = today.getDay() || 7; 
                 const monday = new Date(today);
                 monday.setDate(today.getDate() - dayOfWeek + 1 + (currentWeekOffset * 7));
                 for(let i=0; i<7; i++) {
@@ -255,72 +292,61 @@
                 }
             }
 
-            let html = `<table><tr><th>日期</th><th>預定時間</th><th>站點</th><th>打卡紀錄 / 狀態</th></tr>`;
+            let html = `<table><tr><th>日期</th><th>預定</th><th>站點</th><th>狀態</th></tr>`;
             
-            // 雙層迴圈：遍歷每一天 -> 遍歷每一個應打卡的班表槽位
-            // 反向迴圈讓日期由新到舊顯示
             for (let i = targetDates.length - 1; i >= 0; i--) {
                 const targetDate = targetDates[i];
-                const dateString = `${targetDate.getFullYear()}/${targetDate.getMonth()+1}/${targetDate.getDate()}`;
+                const dateString = `${targetDate.getMonth()+1}/${targetDate.getDate()}`;
                 const isFuture = targetDate > today;
 
-                zSchedule.forEach(slot => {
+                scheduleConfig.forEach(slot => {
                     let rowClass = "";
                     let displayTime = "--:--";
                     let displayStatus = "";
-                    
-                    // 在 logs 中尋找符合該日期、地點，且時間在容忍範圍內的紀錄
                     let matchedLog = null;
+                    
                     for (let row of logs) {
                         if (!row[0]) continue;
                         const logDate = parseSheetDate(row[0]);
                         if (!logDate) continue;
                         
-                        // 檢查日期與地點是否相符
+                        // 比對日期與站點
                         if (logDate.getFullYear() === targetDate.getFullYear() &&
                             logDate.getMonth() === targetDate.getMonth() &&
                             logDate.getDate() === targetDate.getDate() &&
                             row[1] === slot.loc) {
                             
-                            // 檢查時間是否在容忍範圍內 (分鐘數比對)
                             const logMins = logDate.getHours() * 60 + logDate.getMinutes();
-                            if (logMins >= slot.mins - timeTol && logMins <= slot.mins + timeTol) {
-                                matchedLog = { time: row[0].split(' ')[2], distMsg: row[7] || "" };
+                            // 🚨 使用環狀演算法比對時間 🚨
+                            if (isTimeWithinTolerance(logMins, slot.mins, timeTol)) {
+                                matchedLog = { time: row[0].split(' ')[2] || row[0].split(' ')[1], distMsg: row[7] || "" };
                                 break; 
                             }
                         }
                     }
 
                     if (matchedLog) {
-                        // 有打卡紀錄，依距離判定顏色
                         if (matchedLog.distMsg.includes("距離異常") || matchedLog.distMsg.includes("無基準資料")) {
                             rowClass = "bg-orange";
-                            displayStatus = `🟠 ${matchedLog.distMsg}`;
+                            displayStatus = `🟠 ${matchedLog.distMsg.replace("距離異常 ", "")}`;
                         } else {
                             rowClass = "bg-green";
                             displayStatus = `🟢 正常打卡`;
                         }
-                        displayTime = matchedLog.time;
+                        displayTime = matchedLog.time.substring(0,5); // 簡化時間顯示
                     } else {
-                        // 無打卡紀錄
                         if (isFuture) {
                             rowClass = "bg-gray";
                             displayStatus = "未到班";
                         } else {
                             rowClass = "bg-red";
-                            displayStatus = "🔴 缺漏 (未打卡)";
+                            displayStatus = "🔴 未打卡";
                         }
                     }
 
-                    html += `<tr class="${rowClass}">
-                                <td>${dateString}</td>
-                                <td>${slot.time}</td>
-                                <td>${slot.loc}</td>
-                                <td>${displayTime} <br> <span style="font-size:11px;">${displayStatus}</span></td>
-                             </tr>`;
+                    html += `<tr class="${rowClass}"><td>${dateString}</td><td>${slot.time}</td><td><span style="font-size:11px;">${slot.loc}</span></td><td>${displayTime} <br> <span style="font-size:11px;">${displayStatus}</span></td></tr>`;
                 });
             }
-            
             html += `</table>`;
             container.innerHTML = html;
         }
