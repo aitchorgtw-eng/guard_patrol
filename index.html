@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>巡邏打卡工具 (V24 空間註冊引擎版)</title>
+    <title>巡邏打卡工具 (V25 時空同步建檔版)</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
     <script src="https://unpkg.com/html5-qrcode"></script>
     <style>
@@ -11,7 +11,7 @@
         .panel { background: #fff; padding: 15px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); margin-bottom: 20px; }
         .control-group { margin-bottom: 10px; display: flex; flex-direction: column; }
         label { font-weight: bold; font-size: 14px; margin-bottom: 5px; }
-        input[type="number"], input[type="text"], input[type="password"], select { padding: 8px; font-size: 14px; width: 100%; box-sizing: border-box; }
+        input[type="number"], input[type="text"], input[type="time"], input[type="password"], select { padding: 8px; font-size: 14px; width: 100%; box-sizing: border-box; }
         button { padding: 10px 15px; background: #4a90e2; color: #fff; border: none; border-radius: 4px; font-size: 16px; cursor: pointer; font-weight: bold;}
         button:active { background: #357abd; }
         button:disabled { background: #ccc; cursor: not-allowed; }
@@ -40,7 +40,6 @@
 </head>
 <body>
 
-    <!-- 密碼輸入對話框 -->
     <div id="pwdModal">
         <div class="modal-content">
             <h3 style="margin-top:0; color:#9c27b0;">🛡️ 系統解鎖</h3>
@@ -84,7 +83,7 @@
     <!-- 主管面板 -->
     <div id="adminPanel">
         <h2 style="color: #9c27b0; text-align: center; border-bottom: 2px solid #9c27b0; padding-bottom: 10px;">🛡️ 主管控制中心</h2>
-        <input type="hidden" id="apiUrl" value="https://script.google.com/macros/s/AKfycbyDMZUkObApUINPECHgfnHwo4UagSkhxdhV2R6evTZaRJBtqV2LBxW4uZ2uugQ09X7zNg/exec">
+        <input type="hidden" id="apiUrl" value="https://script.google.com/macros/s/AKfycbxm_Hng7PqCIstgiFqWDWSXyHnO45eNJ7cKb2fuOIycWWKm_nY5K210abaY6B6idR-5QQ/exec">
         
         <div class="panel" style="background: #fff;">
             <h3>📊 全路線狀態儀表板 (倒序排列)</h3>
@@ -105,11 +104,10 @@
             <div id="adminDashboardContainer" style="overflow-x: auto; margin-top: 15px;"></div>
         </div>
 
-        <!-- 🚨 V24 LBS 註冊與產生器引擎 🚨 -->
         <div class="panel" style="background: #fff;">
-            <h3>🖨️ 站點註冊與標籤產生器</h3>
+            <h3>🖨️ 站點註冊與標籤產生器 (一次建置)</h3>
             <div class="control-group">
-                <label>1. 選擇要註冊寫入的路線表：</label>
+                <label>1. 選擇註冊寫入的路線：</label>
                 <select id="regRouteSelect" class="route-selector">
                     <option value="路線A">路線 A</option><option value="路線B">路線 B</option>
                     <option value="路線C">路線 C</option><option value="路線D">路線 D</option>
@@ -117,10 +115,17 @@
                 </select>
             </div>
             <div class="control-group">
-                <label>2. 輸入站點名稱：</label>
+                <label>2. 站點名稱：</label>
                 <input type="text" id="genLocationInput" placeholder="例: 測試點2">
             </div>
-            <button id="registerBtn" onclick="registerAndGenerateQR()" class="btn-full" style="background: #9c27b0;">📍 定位、產生標籤並寫入資料庫</button>
+            <!-- 🚨 V25 新增時間選取器 🚨 -->
+            <div class="control-group">
+                <label>3. 預定巡邏時間 (選填)：</label>
+                <input type="time" id="genTimeInput" style="background: #e3f2fd;">
+                <span style="font-size:11px; color:#666; margin-top:3px;">若保留空白，則只會更新座標，不覆寫排班時間。</span>
+            </div>
+            
+            <button id="registerBtn" onclick="registerAndGenerateQR()" class="btn-full" style="background: #9c27b0; margin-top:15px;">📍 獲取座標、寫入排班並產生標籤</button>
             
             <div id="qrcode-container">
                 <div id="qrcode"></div>
@@ -220,10 +225,11 @@
             }).catch(e => logMsg(`連線失敗：${e.message}`, "error"));
         }
 
-        // 🚨 V24 核心：結合 GPS 與後端註冊的 QR 產生器 🚨
+        // 🚨 V25 核心：打包 Time 參數發送至後端 🚨
         function registerAndGenerateQR() {
             const loc = document.getElementById('genLocationInput').value.trim();
             const targetRoute = document.getElementById('regRouteSelect').value;
+            const timeVal = document.getElementById('genTimeInput').value; // 抓取設定時間
             const apiUrl = document.getElementById('apiUrl').value.trim();
             const btn = document.getElementById('registerBtn');
             const qrContainer = document.getElementById('qrcode-container');
@@ -244,39 +250,35 @@
                     const lng = pos.coords.longitude.toFixed(6);
                     coordsBox.innerHTML = `X (緯度): ${lat}<br>Y (經度): ${lng}`;
                     
-                    // 產生 QR Code
                     const targetUrl = `${window.location.origin}${window.location.pathname}?loc=${encodeURIComponent(loc)}`;
                     new QRCode(document.getElementById('qrcode'), { text: targetUrl, width: 180, height: 180 });
                     document.getElementById('qr-text').innerText = loc;
 
-                    // 發送至後端寫入路線表
+                    // 🚨 V25 打包 time 參數
                     fetch(apiUrl, { 
                         method: 'POST', 
-                        body: JSON.stringify({ action: "register_site", route: targetRoute, location: loc, lat: lat, lng: lng }) 
+                        body: JSON.stringify({ action: "register_site", route: targetRoute, location: loc, lat: lat, lng: lng, time: timeVal }) 
                     })
                     .then(res => res.json())
                     .then(result => {
                         if (result.result === "success") {
                             logMsg(`✅ 站點 [${loc}] 已註冊至 [${targetRoute}]。(${result.message})`);
-                            coordsBox.innerHTML += `<br><span style="color:#1565c0; font-size:12px;">✅ 座標已自動寫入試算表</span>`;
+                            coordsBox.innerHTML += `<br><span style="color:#1565c0; font-size:12px;">✅ 座標${timeVal ? '與排班時間' : ''}已寫入試算表</span>`;
+                            // 寫入成功後自動更新主管儀表板
+                            fetchDataAndRender(false);
                         } else {
                             logMsg(`寫入資料庫失敗：${result.message}`, "error");
                             coordsBox.innerHTML += `<br><span style="color:#d32f2f; font-size:12px;">❌ 寫入失敗，請手動複製上方座標</span>`;
                         }
                     })
-                    .catch(err => {
-                        logMsg(`網路連線異常：${err.message}`, "error");
-                    })
-                    .finally(() => {
-                        btn.disabled = false;
-                        btn.innerText = "📍 定位、產生標籤並寫入資料庫";
-                    });
+                    .catch(err => { logMsg(`網路連線異常：${err.message}`, "error"); })
+                    .finally(() => { btn.disabled = false; btn.innerText = "📍 獲取座標、寫入排班並產生標籤"; });
                 },
                 (err) => { 
                     logMsg("無法獲取 GPS 權限，無法註冊站點", "error"); 
                     coordsBox.innerHTML = `<span style="color:#d32f2f;">❌ 無法獲取 GPS 權限</span>`;
                     btn.disabled = false; 
-                    btn.innerText = "📍 定位、產生標籤並寫入資料庫"; 
+                    btn.innerText = "📍 獲取座標、寫入排班並產生標籤"; 
                 },
                 { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
             );
@@ -296,7 +298,7 @@
                     .then(res => res.json())
                     .then(result => {
                         if (result.result === "success") {
-                            logMsg(`✅ 打卡完成！`); btn.innerText = "已完成";
+                            logMsg(`✅ 打卡完成！系統已依據雲端參數驗證完畢。`); btn.innerText = "已完成";
                             fetchDataAndRender(true); 
                         } else { btn.disabled = false; btn.innerText = "重試"; }
                     });
@@ -363,9 +365,9 @@
             .then(result => {
                 if(result.result === "success") {
                     cachedLogs = result.logs;
+                    baseCoordsDict = {}; 
                     if(result.sysParams) cloudParams = result.sysParams;
                     
-                    baseCoordsDict = {}; 
                     dynamicSchedules = {}; 
                     const routeNames = ["路線A", "路線B", "路線C", "路線D", "路線E", "路線Z"];
                     routeNames.forEach(route => {
@@ -389,7 +391,7 @@
                         }
                     });
                     
-                    logMsg(`✅ 資料同步完成。`);
+                    logMsg(`✅ 雲端資料同步完成。`);
                     refreshDashboard(isGuardView);
                 }
             }).catch(e => logMsg(`載入失敗：${e.message}`, "error"));
