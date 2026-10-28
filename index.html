@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>巡邏打卡工具 (V25 時空同步建檔版)</title>
+    <title>巡邏打卡工具 (V27 雙軌排班與列印版)</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
     <script src="https://unpkg.com/html5-qrcode"></script>
     <style>
@@ -20,7 +20,11 @@
         .highlight { border-left: 4px solid #4a90e2; padding-left: 10px; }
         .lock-warning { color: #d32f2f; font-weight: bold; padding: 10px; background: #ffebee; border-radius: 4px; text-align: center; margin-bottom: 10px; display: none; }
         #adminPanel { display: none; border: 2px solid #9c27b0; background: #fdfaf6; padding: 20px;}
+        
+        /* 列印與 QR Code 專區樣式 */
         #qrcode-container { margin-top: 15px; display: flex; flex-direction: column; align-items: center; background: #fff; padding: 20px; border-radius: 8px; border: 1px solid #ddd; display: none;}
+        .print-warning { background:#fff3e0; color:#e65100; padding:10px; border-left:4px solid #ffb74d; margin-bottom:10px; font-weight:bold; font-size: 13px;}
+        
         #secretLock { display: block; text-align: center; margin-top: 30px; font-size: 24px; opacity: 0.15; cursor: pointer; user-select: none; }
         table { width: 100%; border-collapse: collapse; margin-top: 15px; font-size: 13px; }
         th, td { border: 1px solid #ddd; padding: 6px; text-align: center; }
@@ -36,6 +40,15 @@
         .modal-content { background: #fff; padding: 25px; border-radius: 8px; width: 80%; max-width: 300px; text-align: center; box-shadow: 0 4px 10px rgba(0,0,0,0.3); }
         .modal-buttons { display: flex; gap: 10px; margin-top: 15px; }
         .coords-box { background: #e8f5e9; padding: 10px; border: 1px solid #4caf50; border-radius: 4px; font-family: monospace; text-align: center; margin-top: 10px; color: #2e7d32; user-select: all;}
+
+        /* 🚨 V27 物理列印鎖死協議：確保只印出 QR Code，不印出網頁 UI 🚨 */
+        @media print {
+            @page { margin: 0; }
+            body * { visibility: hidden; }
+            #qrcode-container, #qrcode-container * { visibility: visible; }
+            #qrcode-container { position: absolute; left: 50%; top: 20mm; transform: translateX(-50%); border: none; padding: 0;}
+            .no-print { display: none !important; }
+        }
     </style>
 </head>
 <body>
@@ -52,7 +65,7 @@
         </div>
     </div>
 
-    <!-- 警衛面板 -->
+    <!-- ================= 警衛專屬視角 ================= -->
     <div class="panel highlight" id="guardPanel">
         <h3>📍 當前掃描站點</h3>
         <div id="reader"></div>
@@ -64,7 +77,7 @@
         <button id="checkInBtn" class="btn-full" onclick="executeCheckIn()" disabled>送出定位與打卡紀錄</button>
         
         <div style="margin-top: 20px; border-top: 1px dashed #ccc; padding-top: 15px;">
-            <h4 style="margin:0 0 10px 0;">📋 今日個人巡檢動態</h4>
+            <h4 style="margin:0 0 10px 0;">📋 今日個人巡檢動態 <span id="guardShiftLabel" style="font-size:12px; color:#1565c0;"></span></h4>
             <div class="control-group">
                 <label>請選擇您目前負責的路線：</label>
                 <select id="guardRouteSelect" class="route-selector" onchange="refreshDashboard(true)">
@@ -80,13 +93,22 @@
     <div class="log" id="consoleLog">系統初始化... 等待操作...</div>
     <span id="secretLock" onclick="openPwdModal()">🔏</span>
 
-    <!-- 主管面板 -->
+    <!-- ================= 主管解鎖視角 ================= -->
     <div id="adminPanel">
         <h2 style="color: #9c27b0; text-align: center; border-bottom: 2px solid #9c27b0; padding-bottom: 10px;">🛡️ 主管控制中心</h2>
-        <input type="hidden" id="apiUrl" value="https://script.google.com/macros/s/AKfycbxm_Hng7PqCIstgiFqWDWSXyHnO45eNJ7cKb2fuOIycWWKm_nY5K210abaY6B6idR-5QQ/exec">
+        <input type="hidden" id="apiUrl" value="https://script.google.com/macros/s/AKfycbyPZt5HnKH6CgjnFewkS0xaoI6K-glSMgI3o1oofxBB100oZS5p6uCxV1jf4e4U5EoGRw/exec">
         
         <div class="panel" style="background: #fff;">
-            <h3>📊 全路線狀態儀表板 (倒序排列)</h3>
+            <h3>📊 全路線狀態儀表板</h3>
+            <!-- 🚨 V27 雙軌排班切換器 🚨 -->
+            <div class="control-group" style="background: #e8eaf6; padding: 10px; border-radius: 4px; border: 1px solid #c5cae9;">
+                <label style="color: #283593;">👁️ 檢視模式 (日夜雙軌)：</label>
+                <select id="adminShiftSelect" onchange="refreshDashboard(false)" style="font-weight:bold; color:#283593;">
+                    <option value="night" selected>🌙 夜間嚴格排班 (依試算表設定)</option>
+                    <option value="day">☀️ 日間彈性排班 (08:00~17:30 區間覆蓋)</option>
+                </select>
+            </div>
+            
             <div class="nav-controls">
                 <button onclick="changeWeekOffset(-1)">◀ 上一週</button>
                 <span id="weekDisplayLabel" style="font-weight:bold; color:#1565c0;">本週</span>
@@ -104,8 +126,11 @@
             <div id="adminDashboardContainer" style="overflow-x: auto; margin-top: 15px;"></div>
         </div>
 
+        <!-- 🚨 V27 工具化：新增列印防護與獨立列印按鈕 🚨 -->
         <div class="panel" style="background: #fff;">
-            <h3>🖨️ 站點註冊與標籤產生器 (一次建置)</h3>
+            <h3>🖨️ 站點註冊與標籤產生器</h3>
+            <div class="print-warning">⚠️ 列印視窗中，邊距必須設為「無」，縮放比例必須為「100%」，以防手機無法對焦。</div>
+            
             <div class="control-group">
                 <label>1. 選擇註冊寫入的路線：</label>
                 <select id="regRouteSelect" class="route-selector">
@@ -118,7 +143,6 @@
                 <label>2. 站點名稱：</label>
                 <input type="text" id="genLocationInput" placeholder="例: 測試點2">
             </div>
-            <!-- 🚨 V25 新增時間選取器 🚨 -->
             <div class="control-group">
                 <label>3. 預定巡邏時間 (選填)：</label>
                 <input type="time" id="genTimeInput" style="background: #e3f2fd;">
@@ -129,8 +153,9 @@
             
             <div id="qrcode-container">
                 <div id="qrcode"></div>
-                <p id="qr-text" style="font-weight: bold; margin-bottom: 5px;"></p>
-                <div id="coordsBox" class="coords-box">座標獲取中...</div>
+                <p id="qr-text" style="font-weight: bold; margin-bottom: 5px; font-size: 18px;"></p>
+                <button class="no-print" onclick="window.print()" style="background: #1976d2; margin-top:10px;">🖨️ 列印此標籤</button>
+                <div id="coordsBox" class="coords-box no-print">座標獲取中...</div>
             </div>
         </div>
     </div>
@@ -210,7 +235,6 @@
             closePwdModal();
             const apiUrl = document.getElementById('apiUrl').value.trim();
             logMsg("連線驗證權限...");
-
             fetch(apiUrl, { method: 'POST', body: JSON.stringify({ action: "verify_pin", pin: pin }) })
             .then(res => { if (!res.ok) throw new Error(`HTTP ${res.status}`); return res.json(); })
             .then(result => {
@@ -225,11 +249,10 @@
             }).catch(e => logMsg(`連線失敗：${e.message}`, "error"));
         }
 
-        // 🚨 V25 核心：打包 Time 參數發送至後端 🚨
         function registerAndGenerateQR() {
             const loc = document.getElementById('genLocationInput').value.trim();
             const targetRoute = document.getElementById('regRouteSelect').value;
-            const timeVal = document.getElementById('genTimeInput').value; // 抓取設定時間
+            const timeVal = document.getElementById('genTimeInput').value; 
             const apiUrl = document.getElementById('apiUrl').value.trim();
             const btn = document.getElementById('registerBtn');
             const qrContainer = document.getElementById('qrcode-container');
@@ -251,10 +274,9 @@
                     coordsBox.innerHTML = `X (緯度): ${lat}<br>Y (經度): ${lng}`;
                     
                     const targetUrl = `${window.location.origin}${window.location.pathname}?loc=${encodeURIComponent(loc)}`;
-                    new QRCode(document.getElementById('qrcode'), { text: targetUrl, width: 180, height: 180 });
+                    new QRCode(document.getElementById('qrcode'), { text: targetUrl, width: 220, height: 220 });
                     document.getElementById('qr-text').innerText = loc;
 
-                    // 🚨 V25 打包 time 參數
                     fetch(apiUrl, { 
                         method: 'POST', 
                         body: JSON.stringify({ action: "register_site", route: targetRoute, location: loc, lat: lat, lng: lng, time: timeVal }) 
@@ -262,12 +284,11 @@
                     .then(res => res.json())
                     .then(result => {
                         if (result.result === "success") {
-                            logMsg(`✅ 站點 [${loc}] 已註冊至 [${targetRoute}]。(${result.message})`);
-                            coordsBox.innerHTML += `<br><span style="color:#1565c0; font-size:12px;">✅ 座標${timeVal ? '與排班時間' : ''}已寫入試算表</span>`;
-                            // 寫入成功後自動更新主管儀表板
+                            logMsg(`✅ 站點 [${loc}] 已註冊。`);
+                            coordsBox.innerHTML += `<br><span style="color:#1565c0; font-size:12px;">✅ 資料已寫入試算表</span>`;
                             fetchDataAndRender(false);
                         } else {
-                            logMsg(`寫入資料庫失敗：${result.message}`, "error");
+                            logMsg(`寫入失敗：${result.message}`, "error");
                             coordsBox.innerHTML += `<br><span style="color:#d32f2f; font-size:12px;">❌ 寫入失敗，請手動複製上方座標</span>`;
                         }
                     })
@@ -275,10 +296,13 @@
                     .finally(() => { btn.disabled = false; btn.innerText = "📍 獲取座標、寫入排班並產生標籤"; });
                 },
                 (err) => { 
-                    logMsg("無法獲取 GPS 權限，無法註冊站點", "error"); 
-                    coordsBox.innerHTML = `<span style="color:#d32f2f;">❌ 無法獲取 GPS 權限</span>`;
-                    btn.disabled = false; 
-                    btn.innerText = "📍 獲取座標、寫入排班並產生標籤"; 
+                    let errMsg = "無法獲取 GPS 權限";
+                    if (err.code === 1) errMsg = "❌ 您已拒絕 GPS 權限，請至手機/瀏覽器設定開啟。";
+                    if (err.code === 2) errMsg = "❌ 硬體無訊號，請移動至窗邊或室外重試。";
+                    if (err.code === 3) errMsg = "❌ 定位計算超時，請檢查網路或移動位置。";
+                    logMsg(errMsg, "error"); 
+                    coordsBox.innerHTML = `<span style="color:#d32f2f; font-weight:bold;">${errMsg}</span>`;
+                    btn.disabled = false; btn.innerText = "📍 重新獲取座標並產生標籤"; 
                 },
                 { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
             );
@@ -298,7 +322,7 @@
                     .then(res => res.json())
                     .then(result => {
                         if (result.result === "success") {
-                            logMsg(`✅ 打卡完成！系統已依據雲端參數驗證完畢。`); btn.innerText = "已完成";
+                            logMsg(`✅ 打卡完成！`); btn.innerText = "已完成";
                             fetchDataAndRender(true); 
                         } else { btn.disabled = false; btn.innerText = "重試"; }
                     });
@@ -390,13 +414,13 @@
                             }
                         }
                     });
-                    
-                    logMsg(`✅ 雲端資料同步完成。`);
+                    logMsg(`✅ 同步完成。`);
                     refreshDashboard(isGuardView);
                 }
             }).catch(e => logMsg(`載入失敗：${e.message}`, "error"));
         }
 
+        // 🚨 V27 核心：日夜雙軌排班引擎 🚨
         function renderScheduleMatrix(logs, scheduleConfig, isGuardView) {
             const container = document.getElementById(isGuardView ? 'guardDashboardContainer' : 'adminDashboardContainer');
             if (scheduleConfig.length === 0) {
@@ -408,6 +432,23 @@
             const distTol = cloudParams.distTol; 
             const gpsAccLimit = cloudParams.gpsAcc; 
             
+            // 決定目前是日間還是夜間模式
+            let shiftMode = "night";
+            if (isGuardView) {
+                // 警衛端：根據現在時間自動判斷
+                const nowMins = new Date().getHours() * 60 + new Date().getMinutes();
+                if (nowMins >= 480 && nowMins <= 1050) { // 08:00 ~ 17:30
+                    shiftMode = "day";
+                    document.getElementById('guardShiftLabel').innerText = "(當前：日間彈性模式)";
+                } else {
+                    shiftMode = "night";
+                    document.getElementById('guardShiftLabel').innerText = "(當前：夜間嚴格模式)";
+                }
+            } else {
+                // 主管端：根據下拉選單手動判斷
+                shiftMode = document.getElementById('adminShiftSelect').value;
+            }
+
             let targetDates = [];
             const today = new Date();
             today.setHours(0,0,0,0);
@@ -425,15 +466,28 @@
                 }
             }
 
-            let sortedScheduleConfig = [...scheduleConfig].sort((a, b) => b.mins - a.mins);
-            let html = `<table><tr><th>日期</th><th>預定</th><th>站點</th><th>動態防偽驗證狀態</th></tr>`;
+            // 根據日夜模式重構排班矩陣
+            let activeSchedule = [];
+            if (shiftMode === "day") {
+                // 日間模式：過濾重複站點，統一標示為 08:00~17:30
+                const uniqueLocsMap = new Map();
+                scheduleConfig.forEach(s => {
+                    if(!uniqueLocsMap.has(s.normLoc)) uniqueLocsMap.set(s.normLoc, s.loc);
+                });
+                activeSchedule = Array.from(uniqueLocsMap, ([normLoc, loc]) => ({ normLoc: normLoc, loc: loc, time: "08:00~17:30", mins: 0 }));
+            } else {
+                // 夜間模式：依照時間倒序排列
+                activeSchedule = [...scheduleConfig].sort((a, b) => b.mins - a.mins);
+            }
+
+            let html = `<table><tr><th>日期</th><th>${shiftMode==="day" ? "開放區間" : "預定時間"}</th><th>站點</th><th>動態驗證狀態</th></tr>`;
             
             for (let i = targetDates.length - 1; i >= 0; i--) {
                 const targetDate = targetDates[i];
                 const dateString = `${targetDate.getMonth()+1}/${targetDate.getDate()}`;
                 const isFuture = targetDate > today;
 
-                sortedScheduleConfig.forEach(slot => {
+                activeSchedule.forEach(slot => {
                     let rowClass = "";
                     let displayTime = "--:--";
                     let displayStatus = "";
@@ -452,10 +506,18 @@
                             normLogRowLoc === slot.normLoc) {
                             
                             const logMins = logDate.getHours() * 60 + logDate.getMinutes();
-                            if (isTimeWithinTolerance(logMins, slot.mins, timeTol)) {
+                            
+                            // 🚨 V27 雙軌時間判定 🚨
+                            let timeValid = false;
+                            if (shiftMode === "day") {
+                                if (logMins >= 480 && logMins <= 1050) timeValid = true; // 日間合法窗
+                            } else {
+                                if (isTimeWithinTolerance(logMins, slot.mins, timeTol)) timeValid = true; // 夜間嚴格窗
+                            }
+
+                            if (timeValid) {
                                 const finalH = logDate.getHours().toString().padStart(2, '0');
                                 const finalM = logDate.getMinutes().toString().padStart(2, '0');
-                                
                                 matchedLog = { time: `${finalH}:${finalM}`, actualLat: row[2], actualLng: row[3], actualAcc: row[4], normLocName: normLogRowLoc };
                                 break; 
                             }
@@ -482,14 +544,14 @@
                                 const dynamicDist = calculateHaversine(baseLat, baseLng, actualLat, actualLng);
                                 if (dynamicDist > distTol) {
                                     isDistAnomaly = true;
-                                    finalMsg = finalMsg ? `${finalMsg}<br>定位點異常 (偏離 ${dynamicDist.toFixed(1)}m)` : `定位點異常 (偏離 ${dynamicDist.toFixed(1)}m)`;
+                                    finalMsg = finalMsg ? `${finalMsg}<br>定位異常(偏離 ${dynamicDist.toFixed(1)}m)` : `定位異常(偏離 ${dynamicDist.toFixed(1)}m)`;
                                 } else {
                                     if (!isGpsAnomaly) finalMsg = `正常 (誤差 ${dynamicDist.toFixed(1)}m)`;
                                 }
                             }
                         } else {
                             isDistAnomaly = true; 
-                            finalMsg = "無基準資料或座標遺失";
+                            finalMsg = "座標遺失";
                         }
 
                         if (isDistAnomaly || isGpsAnomaly) {
@@ -497,7 +559,7 @@
                             displayStatus = `🟠 ${finalMsg}`;
                         } else {
                             rowClass = "bg-green";
-                            displayStatus = `🟢 正常打卡`;
+                            displayStatus = `🟢 已巡檢`;
                         }
                         displayTime = matchedLog.time; 
                     } else {
